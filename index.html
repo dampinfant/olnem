@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flower Finder — Newport Coast</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #f5f5f7;
+      --surface:  #ffffff;
+      --border:   #e0e0e0;
+      --accent:   #2d6a4f;
+      --accent2:  #52b788;
+      --text:     #1a1a1a;
+      --muted:    #666;
+      --sale:     #d62828;
+      --radius:   10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--accent);
+      color: #fff;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -.3px; }
+    header .subtitle { font-size: .9rem; opacity: .75; }
+
+    #freshness {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: .8rem;
+    }
+    #last-updated { opacity: .75; white-space: nowrap; }
+    #last-updated.stale { color: #ffd166; opacity: 1; }
+
+    /* radius pills live in the header so they're visually tied to "fetch" not "filter" */
+    #radius-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    #radius-group .rlabel { opacity: .7; white-space: nowrap; }
+    #radius-group button {
+      height: 26px; padding: 0 10px;
+      border-radius: 13px;
+      border: 1px solid rgba(255,255,255,.35);
+      background: rgba(255,255,255,.1);
+      color: #fff; cursor: pointer; font-size: .78rem;
+      transition: background .12s, border-color .12s;
+      white-space: nowrap;
+    }
+    #radius-group button:hover:not(:disabled):not(.active) { background: rgba(255,255,255,.22); }
+    #radius-group button.active  { background: rgba(255,255,255,.3); border-color: rgba(255,255,255,.8); font-weight: 600; }
+    #radius-group button:disabled { opacity: .4; cursor: not-allowed; }
+
+    #refresh-btn {
+      height: 28px; padding: 0 13px;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,.4);
+      background: rgba(255,255,255,.15);
+      color: #fff; cursor: pointer; font-size: .8rem;
+      transition: background .12s;
+      white-space: nowrap;
+    }
+    #refresh-btn:hover:not(:disabled) { background: rgba(255,255,255,.28); }
+    #refresh-btn:disabled { opacity: .45; cursor: not-allowed; }
+    #refresh-error { color: #ffd166; font-size: .75rem; max-width: 280px; }
+
+    /* ── Filters ── */
+    #filters {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 32px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    #filters input, #filters select {
+      height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: .875rem;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+    }
+    #filters input:focus, #filters select:focus {
+      border-color: var(--accent2);
+      box-shadow: 0 0 0 3px rgba(82,183,136,.18);
+    }
+
+    /* location row — full width so it sits above the other filter chips */
+    #location-row {
+      flex-basis: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px dashed var(--border);
+    }
+    #location-row label { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+    #location-input { width: 260px; }
+    #location-input.geo-ok    { border-color: var(--accent2); }
+    #location-input.geo-error { border-color: #d62828; }
+    #location-go {
+      height: 36px; padding: 0 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--accent); color: #fff;
+      cursor: pointer; font-size: .875rem;
+      transition: background .12s;
+      white-space: nowrap;
+    }
+    #location-go:hover:not(:disabled) { background: #235c43; }
+    #location-go:disabled { opacity: .5; cursor: not-allowed; }
+    #location-status { font-size: .78rem; color: var(--muted); }
+    #search    { width: 220px; }
+    #dispensary { width: 230px; }
+    .range-group { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); }
+    .range-group input { width: 72px; }
+
+    /* ── Weight pills ── */
+    .pill-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .pill-label { font-size: .8rem; color: var(--muted); margin-right: 2px; }
+    .pill-group button {
+      height: 30px; padding: 0 13px; border-radius: 15px;
+      border: 1px solid var(--border); background: var(--bg);
+      cursor: pointer; font-size: .8rem; color: var(--muted);
+      transition: background .12s, color .12s, border-color .12s;
+      white-space: nowrap;
+    }
+    .pill-group button:hover  { border-color: var(--accent2); color: var(--accent); }
+    .pill-group button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    #result-count {
+      margin-left: auto;
+      font-size: .82rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ── Table wrapper ── */
+    #table-wrap {
+      padding: 24px 32px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .875rem;
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07);
+    }
+
+    thead th {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      padding: 11px 14px;
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      position: sticky;
+      top: 0;
+    }
+    thead th:hover { background: #235c43; }
+    thead th .sort-icon { margin-left: 5px; opacity: .55; font-size: .75rem; }
+    thead th.sorted   .sort-icon { opacity: 1; }
+
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f0faf4; }
+
+    td { padding: 9px 14px; vertical-align: middle; }
+
+    .ppg   { font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .price { white-space: nowrap; color: var(--muted); }
+    .wt    { white-space: nowrap; color: var(--muted); }
+    .dist  { white-space: nowrap; color: var(--muted); font-size: .8rem; }
+    .product { max-width: 320px; }
+    .brand   { color: var(--muted); font-size: .82rem; max-width: 160px; }
+    .disp    { font-size: .82rem; max-width: 220px; }
+
+    .sale-badge {
+      display: inline-block;
+      background: var(--sale);
+      color: #fff;
+      font-size: .68rem;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 5px;
+      vertical-align: middle;
+      letter-spacing: .3px;
+    }
+
+    .score-badge {
+      display: inline-block;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: .3px;
+      white-space: nowrap;
+    }
+    .score-high { background: #d1fae5; color: #065f46; }
+    .score-mid  { background: #fef3c7; color: #92400e; }
+    .score-low  { background: #fee2e2; color: #991b1b; }
+    .score-na   { color: var(--muted); font-size: .8rem; }
+
+    .flag-badge {
+      display: inline-block;
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+      cursor: help;
+      border: 1px solid transparent;
+    }
+    .flag-sale { background: #fff3cd; color: #856404; border-color: #ffc107; }
+    .flag-bait { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+
+    .score-col { white-space: nowrap; }
+
+    .empty {
+      text-align: center;
+      padding: 48px;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌿 Flower Finder</h1>
+  <span class="subtitle" id="location-subtitle">Newport Coast, CA — sorted by $/g</span>
+  <div id="freshness">
+    <span id="last-updated">Checking…</span>
+    <div id="radius-group">
+      <span class="rlabel">Radius:</span>
+      <button class="rpill" data-r="5mi">5 mi</button>
+      <button class="rpill" data-r="10mi">10 mi</button>
+      <button class="rpill" data-r="15mi">15 mi</button>
+      <button class="rpill active" data-r="20mi">20 mi</button>
+      <button class="rpill" data-r="30mi">30 mi</button>
+    </div>
+    <button id="refresh-btn" disabled title="Re-run scraper with current radius">Refresh</button>
+    <span id="refresh-error"></span>
+  </div>
+</header>
+
+<div id="filters">
+  <div id="location-row">
+    <label for="location-input">Location</label>
+    <input id="location-input" type="search" placeholder="City, neighborhood, or address…" autocomplete="off" spellcheck="false">
+    <button id="location-go">Search</button>
+    <span id="location-status"></span>
+  </div>
+  <input id="search"     type="search"  placeholder="Search strain or product…">
+  <select id="dispensary"><option value="">All dispensaries</option></select>
+  <div class="range-group">
+    $/g from
+    <input id="ppg-min" type="number" placeholder="0"   min="0" step="0.01">
+    to
+    <input id="ppg-max" type="number" placeholder="any" min="0" step="0.01">
+  </div>
+  <div class="range-group">
+    Price from $
+    <input id="price-min" type="number" placeholder="0"   min="0" step="0.01">
+    to $
+    <input id="price-max" type="number" placeholder="any" min="0" step="0.01">
+  </div>
+  <div class="pill-group" id="weight-pills">
+    <span class="pill-label">Size:</span>
+  </div>
+  <div class="pill-group" id="flag-filters">
+    <span class="pill-label">Hide:</span>
+    <button id="hide-fake-sales" title="Hide items marked on sale but priced at or above the median $/g for that size">Fake sales</button>
+    <button id="hide-bait-prices" title="Hide items priced more than 50% below the median $/g — likely out of stock or bait listings">Bait prices</button>
+  </div>
+  <div class="pill-group" id="score-mode">
+    <span class="pill-label">Score:</span>
+    <button id="mode-mainstream" class="active" title="Score by distribution breadth — rewards established brands carried across many dispensaries">Mainstream</button>
+    <button id="mode-craft" title="Score by exclusivity + price consistency — surfaces boutique brands only at one or two spots">Craft</button>
+  </div>
+  <span id="result-count"></span>
+</div>
+
+<div id="table-wrap">
+  <table id="results">
+    <thead>
+      <tr>
+        <th data-col="ppg"        class="sorted">$/g <span class="sort-icon">▲</span></th>
+        <th data-col="price"              >Price <span class="sort-icon">⇅</span></th>
+        <th data-col="grams"              >Size <span class="sort-icon">⇅</span></th>
+        <th data-col="product"            >Product <span class="sort-icon">⇅</span></th>
+        <th data-col="brand"              >Brand <span class="sort-icon">⇅</span></th>
+        <th data-col="_brand_score"       >Score <span class="sort-icon">⇅</span></th>
+        <th data-col="dispensary"         >Dispensary <span class="sort-icon">⇅</span></th>
+        <th data-col="dist"               >Dist <span class="sort-icon">⇅</span></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+  let allRows = [];
+  let sortCol = "ppg";
+  let sortAsc = true;
+  let selectedWeights = new Set();   // empty = no filter (show all)
+  let hideFakeSales  = false;
+  let hideBaitPrices = false;
+  let scoringMode    = 'mainstream';  // 'mainstream' | 'craft'
+
+  // Human-friendly labels for standard cannabis retail sizes
+  const WEIGHT_LABELS = {
+    0.5: "½g", 1: "1g", 2: "2g", 3.5: "⅛ oz",
+    7: "¼ oz", 14: "½ oz", 28: "1 oz",
+  };
+  function weightLabel(g) {
+    return WEIGHT_LABELS[g] ?? `${Number(g).toFixed(g % 1 === 0 ? 0 : 1)}g`;
+  }
+
+  // ── Brand reputation scoring ──────────────────────────────────────────────
+  // Two modes, each 0-100.
+  //
+  // mainstream — rewards proven distribution breadth + variety
+  //   Distribution  40 pts  breadth across dispensaries
+  //   Variety       20 pts  distinct product count (caps at 10)
+  //   Consistency   25 pts  low $/g coefficient of variation
+  //   Sale auth     15 pts  penalise always-on-sale brands
+  //
+  // craft — ignores distribution; rewards exclusivity + tight pricing
+  //   Exclusivity   15 pts  full score at ≤1 disp, fades to 0 at 4+
+  //   Variety       25 pts  distinct products (lower cap of 5)
+  //   Consistency   40 pts  tighter CoV penalty — craft brands should be priced honestly
+  //   Sale auth     20 pts  same penalty but higher weight
+  function computeBrandScores(rows, mode) {
+    const brands = {};
+    for (const r of rows) {
+      const b = r.brand || '';
+      if (!brands[b]) brands[b] = { disps: new Set(), products: new Set(), ppgs: [], sales: 0, total: 0 };
+      brands[b].disps.add(r.dispensary);
+      brands[b].products.add(r.product);
+      brands[b].ppgs.push(+r.ppg);
+      brands[b].total++;
+      if (r.on_sale === 'True') brands[b].sales++;
+    }
+    const maxDisps = Math.max(...Object.values(brands).map(d => d.disps.size));
+    const scores = {};
+
+    for (const [name, d] of Object.entries(brands)) {
+      const saleRatio  = d.sales / d.total;
+      const saleAuth   = Math.max(0, 1 - Math.max(0, saleRatio - 0.3) / 0.7);
+
+      let consScore;
+      if (d.ppgs.length < 2) {
+        consScore = mode === 'craft' ? 20 : 12;   // neutral for single data point
+      } else {
+        const mean  = d.ppgs.reduce((a, x) => a + x, 0) / d.ppgs.length;
+        const stdev = Math.sqrt(d.ppgs.reduce((a, x) => a + (x - mean) ** 2, 0) / d.ppgs.length);
+        const cv    = stdev / mean;
+        consScore   = mode === 'craft'
+          ? Math.max(0, 40 - cv * 80)   // higher weight, stricter CoV penalty
+          : Math.max(0, 25 - cv * 50);
+      }
+
+      let score;
+      if (mode === 'craft') {
+        const exclusivScore = 15 * Math.max(0, 1 - (d.disps.size - 1) / 3); // 15 @ 1 disp → 0 @ 4+
+        const varScore      = Math.min(d.products.size / 5, 1) * 25;         // cap at 5 products
+        const saleScore     = 20 * saleAuth;
+        score = exclusivScore + varScore + consScore + saleScore;
+      } else {
+        const distScore = (d.disps.size / maxDisps) * 40;
+        const varScore  = Math.min(d.products.size / 10, 1) * 20;
+        const saleScore = 15 * saleAuth;
+        score = distScore + varScore + consScore + saleScore;
+      }
+
+      scores[name] = Math.min(100, Math.round(score));
+    }
+    return scores;
+  }
+
+  function recomputeScores() {
+    const brandScores = computeBrandScores(allRows, scoringMode);
+    for (const r of allRows) r._brand_score = brandScores[r.brand || ''] ?? 0;
+    render();
+  }
+
+  // ── Fake-deal detection ───────────────────────────────────────────────────
+  // Adds _flags array and _medPpg to each row:
+  //   fake_sale  — on_sale=True but $/g is at or above the median for that size
+  //   bait_price — $/g is <50% of median for that size (only flagged when ≥3 data pts)
+  function computeDealFlags(rows) {
+    const ppgByWeight = {};
+    for (const r of rows) {
+      const g = +r.grams;
+      if (!ppgByWeight[g]) ppgByWeight[g] = [];
+      ppgByWeight[g].push(+r.ppg);
+    }
+    const medianOf = arr => {
+      const s = [...arr].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
+    };
+    const medPpg = {};
+    for (const [g, ppgs] of Object.entries(ppgByWeight)) medPpg[g] = medianOf(ppgs);
+
+    for (const r of rows) {
+      const med = medPpg[+r.grams] ?? +r.ppg;
+      const flags = [];
+      if (r.on_sale === 'True' && +r.ppg >= med) flags.push('fake_sale');
+      if (+r.ppg < med * 0.5 && (ppgByWeight[+r.grams]?.length ?? 0) >= 3) flags.push('bait_price');
+      r._flags   = flags;
+      r._medPpg  = med;
+    }
+  }
+
+  // ── Load CSV ──────────────────────────────────────────────────────────────
+  Papa.parse("flower_results.csv", {
+    download: true,
+    header: true,
+    dynamicTyping: true,
+    skipEmptyLines: true,
+    complete({ data }) {
+      allRows = data;
+      computeDealFlags(allRows);
+      const brandScores = computeBrandScores(allRows, scoringMode);
+      for (const r of allRows) r._brand_score = brandScores[r.brand || ''] ?? 0;
+      populateDispensaryFilter();
+      populateWeightPills();
+      render();
+    },
+    error(err) {
+      document.getElementById("tbody").innerHTML =
+        `<tr><td colspan="8" class="empty">Could not load flower_results.csv — make sure the server is running in the same folder.<br><code>${err.message}</code></td></tr>`;
+    }
+  });
+
+  // ── Filters ───────────────────────────────────────────────────────────────
+  function getFilters() {
+    return {
+      search:   document.getElementById("search").value.trim().toLowerCase(),
+      disp:     document.getElementById("dispensary").value,
+      ppgMin:   parseFloat(document.getElementById("ppg-min").value)   || 0,
+      ppgMax:   parseFloat(document.getElementById("ppg-max").value)   || Infinity,
+      priceMin: parseFloat(document.getElementById("price-min").value) || 0,
+      priceMax: parseFloat(document.getElementById("price-max").value) || Infinity,
+    };
+  }
+
+  function applyFilters(rows) {
+    const f = getFilters();
+    return rows.filter(r =>
+      (!f.search || r.product?.toLowerCase().includes(f.search) || r.brand?.toLowerCase().includes(f.search)) &&
+      (!f.disp   || r.dispensary === f.disp) &&
+      (selectedWeights.size === 0 || selectedWeights.has(Number(r.grams))) &&
+      r.ppg   >= f.ppgMin && r.ppg   <= f.ppgMax &&
+      r.price >= f.priceMin && r.price <= f.priceMax &&
+      !(hideFakeSales  && r._flags?.includes('fake_sale')) &&
+      !(hideBaitPrices && r._flags?.includes('bait_price'))
+    );
+  }
+
+  // ── Sort ──────────────────────────────────────────────────────────────────
+  function sortRows(rows) {
+    return [...rows].sort((a, b) => {
+      const av = a[sortCol], bv = b[sortCol];
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+      return sortAsc ? cmp : -cmp;
+    });
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function render() {
+    const filtered = applyFilters(allRows);
+    const sorted   = sortRows(filtered);
+
+    document.getElementById("result-count").textContent =
+      `${sorted.length.toLocaleString()} of ${allRows.length.toLocaleString()} results`;
+
+    const tbody = document.getElementById("tbody");
+    if (!sorted.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">No results match your filters.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = sorted.map(r => {
+      const score = r._brand_score ?? 0;
+      const scoreClass = !r.brand ? '' : score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
+      const scoreBadge = r.brand
+        ? `<span class="score-badge ${scoreClass}" title="Brand reputation score (distribution, variety, price consistency)">${score}</span>`
+        : `<span class="score-na">—</span>`;
+
+      const flagBadges = (r._flags || []).map(f =>
+        f === 'fake_sale'  ? `<span class="flag-badge flag-sale"  title="On-sale price is at or above the $${r._medPpg?.toFixed(2)}/g median for this size — discount may be minimal">?SALE</span>` :
+        f === 'bait_price' ? `<span class="flag-badge flag-bait"  title="$/g is more than 50% below the $${r._medPpg?.toFixed(2)}/g median — verify this item is in stock">⚠LOW</span>` : ''
+      ).join('');
+
+      return `
+      <tr>
+        <td class="ppg">$${Number(r.ppg).toFixed(2)}</td>
+        <td class="price">$${Number(r.price).toFixed(2)}</td>
+        <td class="wt">${Number(r.grams).toFixed(1)}g</td>
+        <td class="product" title="${r.updated_at ? 'Listing updated ' + fmtRelative(r.updated_at) : ''}">
+          ${esc(r.product)}
+          ${r.on_sale === "True" ? '<span class="sale-badge">SALE</span>' : ""}
+          ${flagBadges}
+        </td>
+        <td class="brand">${esc(r.brand || "—")}</td>
+        <td class="score-col">${scoreBadge}</td>
+        <td class="disp">${esc(r.dispensary)}</td>
+        <td class="dist">${Number(r.dist).toFixed(1)} mi</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function esc(s) {
+    return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  // ── Weight pills ─────────────────────────────────────────────────────────
+  function populateWeightPills() {
+    const unique = [...new Set(allRows.map(r => Number(r.grams)))].sort((a, b) => a - b);
+    const container = document.getElementById("weight-pills");
+    unique.forEach(g => {
+      const btn = document.createElement("button");
+      btn.textContent = weightLabel(g);
+      btn.title = `${Number(g).toFixed(1)}g`;
+      btn.addEventListener("click", () => {
+        if (selectedWeights.has(g)) {
+          selectedWeights.delete(g);
+          btn.classList.remove("active");
+        } else {
+          selectedWeights.add(g);
+          btn.classList.add("active");
+        }
+        render();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  // ── Dispensary dropdown ───────────────────────────────────────────────────
+  function populateDispensaryFilter() {
+    const names = [...new Set(allRows.map(r => r.dispensary))].sort();
+    const sel   = document.getElementById("dispensary");
+    names.forEach(n => {
+      const opt = document.createElement("option");
+      opt.value = opt.textContent = n;
+      sel.appendChild(opt);
+    });
+  }
+
+  // ── Column sort on header click ───────────────────────────────────────────
+  document.querySelectorAll("thead th").forEach(th => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.col;
+      if (sortCol === col) { sortAsc = !sortAsc; }
+      else { sortCol = col; sortAsc = true; }
+
+      document.querySelectorAll("thead th").forEach(t => {
+        const icon = t.querySelector(".sort-icon");
+        if (t.dataset.col === sortCol) {
+          t.classList.add("sorted");
+          icon.textContent = sortAsc ? "▲" : "▼";
+        } else {
+          t.classList.remove("sorted");
+          icon.textContent = "⇅";
+        }
+      });
+
+      render();
+    });
+  });
+
+  // ── Wire up filter inputs ─────────────────────────────────────────────────
+  ["search","dispensary","ppg-min","ppg-max","price-min","price-max"].forEach(id => {
+    document.getElementById(id).addEventListener("input", render);
+  });
+
+  // ── Flag filter toggles ───────────────────────────────────────────────────
+  document.getElementById("hide-fake-sales").addEventListener("click", function() {
+    hideFakeSales = !hideFakeSales;
+    this.classList.toggle("active", hideFakeSales);
+    render();
+  });
+  document.getElementById("hide-bait-prices").addEventListener("click", function() {
+    hideBaitPrices = !hideBaitPrices;
+    this.classList.toggle("active", hideBaitPrices);
+    render();
+  });
+
+  // ── Score mode toggle ─────────────────────────────────────────────────────
+  const SCORE_TH_LABELS = {
+    mainstream: 'Score',
+    craft:      'Score ◆',
+  };
+  function setScoreMode(mode) {
+    scoringMode = mode;
+    document.getElementById('mode-mainstream').classList.toggle('active', mode === 'mainstream');
+    document.getElementById('mode-craft').classList.toggle('active', mode === 'craft');
+    const th = document.querySelector('th[data-col="_brand_score"]');
+    th.childNodes[0].textContent = SCORE_TH_LABELS[mode] + ' ';
+    if (allRows.length) recomputeScores();
+  }
+  document.getElementById('mode-mainstream').addEventListener('click', () => setScoreMode('mainstream'));
+  document.getElementById('mode-craft').addEventListener('click', () => setScoreMode('craft'));
+
+  // ── Location state ───────────────────────────────────────────────────────
+  let currentLatlng        = '33.58,-117.83';
+  let currentLocationLabel = 'Newport Coast, CA';
+  let locationInitialised  = false;   // only auto-fill the input on first status load
+
+  async function geocodeAndRefresh() {
+    const input  = document.getElementById('location-input');
+    const status = document.getElementById('location-status');
+    const go     = document.getElementById('location-go');
+    const q = input.value.trim();
+    if (!q) return;
+
+    input.classList.remove('geo-ok', 'geo-error');
+    status.textContent = 'Searching…';
+    go.disabled = true;
+
+    try {
+      const r   = await fetch('/api/geocode?' + new URLSearchParams({ q }));
+      const geo = await r.json();
+      if (geo.error) {
+        input.classList.add('geo-error');
+        status.textContent = geo.error === 'not found' ? 'Location not found' : 'Geocode error';
+        go.disabled = false;
+        return;
+      }
+      // Shorten "City, County, State, Country" → "City, State, Country"
+      const parts = geo.display_name.split(',').map(s => s.trim());
+      const label = parts.length > 2
+        ? `${parts[0]}, ${parts[parts.length - 2]}, ${parts[parts.length - 1]}`
+        : parts.join(', ');
+      currentLatlng        = `${geo.lat.toFixed(5)},${geo.lng.toFixed(5)}`;
+      currentLocationLabel = label;
+      input.value = label;
+      input.classList.add('geo-ok');
+      status.textContent = '';
+      go.disabled = false;
+      document.getElementById('location-subtitle').textContent = `${label} — sorted by $/g`;
+      doRefresh();
+    } catch {
+      input.classList.add('geo-error');
+      status.textContent = 'Could not reach geocoder';
+      go.disabled = false;
+    }
+  }
+
+  // ── Radius state ─────────────────────────────────────────────────────────
+  let currentRadius = '20mi';
+
+  function setRadiusUI(r) {
+    currentRadius = r;
+    document.querySelectorAll('.rpill').forEach(b => {
+      b.classList.toggle('active', b.dataset.r === r);
+    });
+  }
+
+  // ── Freshness helpers ─────────────────────────────────────────────────────
+  function fmtRelative(isoStr) {
+    if (!isoStr) return '';
+    const mins = Math.round((Date.now() - new Date(isoStr)) / 60000);
+    if (mins <  1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs  < 24) return `${hrs}h ago`;
+    return `${Math.round(hrs / 24)}d ago`;
+  }
+
+  function applyStatus(s) {
+    const el  = document.getElementById('last-updated');
+    const btn = document.getElementById('refresh-btn');
+    const err = document.getElementById('refresh-error');
+    err.textContent = s.error ? 'Last run failed: ' + s.error.slice(-120) : '';
+
+    // Sync radius + location from server on first load (survives page refresh)
+    if (s.radius) setRadiusUI(s.radius);
+    if (s.latlng)         currentLatlng        = s.latlng;
+    if (s.location_label) currentLocationLabel = s.location_label;
+    if (!locationInitialised && s.location_label) {
+      document.getElementById('location-input').value = s.location_label;
+      document.getElementById('location-subtitle').textContent =
+        `${s.location_label} — sorted by $/g`;
+      locationInitialised = true;
+    }
+    if (s.location_label && locationInitialised) {
+      document.getElementById('location-subtitle').textContent =
+        `${s.location_label} — sorted by $/g`;
+    }
+
+    const busy = s.running;
+    document.querySelectorAll('.rpill').forEach(b => b.disabled = busy);
+
+    if (busy) {
+      el.textContent  = `Refreshing (${s.radius || currentRadius})…`;
+      el.classList.remove('stale');
+      btn.disabled    = true;
+      btn.textContent = 'Running…';
+    } else {
+      btn.disabled    = false;
+      btn.textContent = 'Refresh';
+      if (!s.csv_mtime) {
+        el.textContent = 'No data yet';
+        el.classList.remove('stale');
+        return;
+      }
+      const ageMin = (Date.now() - new Date(s.csv_mtime)) / 60000;
+      el.textContent = `Data from ${fmtRelative(s.csv_mtime)}`;
+      el.classList.toggle('stale', ageMin > 240);
+    }
+  }
+
+  let _pollTimer = null;
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/api/status');
+      if (!r.ok) throw new Error(r.status);
+      const s = await r.json();
+      applyStatus(s);
+      return s;
+    } catch {
+      document.getElementById('last-updated').textContent = 'Server offline — run server.py';
+      document.getElementById('refresh-btn').disabled = true;
+      return null;
+    }
+  }
+
+  function reloadCSV() {
+    Papa.parse('flower_results.csv', {
+      download: true, header: true, dynamicTyping: true, skipEmptyLines: true,
+      complete({ data }) {
+        allRows = data;
+        computeDealFlags(allRows);
+        const brandScores = computeBrandScores(allRows, scoringMode);
+        for (const r of allRows) r._brand_score = brandScores[r.brand || ''] ?? 0;
+        populateDispensaryFilter();
+        populateWeightPills();
+        render();
+      }
+    });
+  }
+
+  async function doRefresh(radius) {
+    radius = radius || currentRadius;
+    setRadiusUI(radius);
+    document.getElementById('refresh-btn').disabled = true;
+    document.querySelectorAll('.rpill').forEach(b => b.disabled = true);
+    document.getElementById('last-updated').textContent = `Starting scraper (${radius})…`;
+    document.getElementById('refresh-error').textContent = '';
+    try {
+      const r = await fetch('/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ radius, latlng: currentLatlng, location_label: currentLocationLabel }),
+      });
+      const s = await r.json();
+      if (s.status === 'already_running') {
+        document.getElementById('last-updated').textContent = 'Already running…';
+      }
+    } catch {
+      document.getElementById('refresh-error').textContent = 'Could not reach server.';
+      document.getElementById('refresh-btn').disabled = false;
+      document.querySelectorAll('.rpill').forEach(b => b.disabled = false);
+      return;
+    }
+    // Poll every 4 s until scraper finishes
+    if (_pollTimer) clearInterval(_pollTimer);
+    _pollTimer = setInterval(async () => {
+      const s = await fetchStatus();
+      if (s && !s.running) {
+        clearInterval(_pollTimer);
+        _pollTimer = null;
+        reloadCSV();
+      }
+    }, 4000);
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', () => doRefresh());
+
+  // Location search: Enter key or Go button
+  document.getElementById('location-go').addEventListener('click', geocodeAndRefresh);
+  document.getElementById('location-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') geocodeAndRefresh();
+  });
+  // Clear geo state when user starts typing a new location
+  document.getElementById('location-input').addEventListener('input', () => {
+    document.getElementById('location-input').classList.remove('geo-ok', 'geo-error');
+    document.getElementById('location-status').textContent = '';
+  });
+
+  // Radius pills: clicking a different radius re-scrapes immediately;
+  // clicking the active radius is a no-op (use Refresh for a same-radius re-scrape)
+  document.querySelectorAll('.rpill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.r !== currentRadius) doRefresh(btn.dataset.r);
+    });
+  });
+
+  // Initial status check + periodic display refresh (not a full reload)
+  fetchStatus();
+  setInterval(fetchStatus, 60000);
+</script>
+</body>
+</html>

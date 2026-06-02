@@ -1,0 +1,33 @@
+# Generated data — recreated on every scrape run
+flower_results.csv
+
+# User-specific saved location
+location.json
+
+# Temp dev/debug scripts
+inspect_api.py
+screenshot_*.py
+
+# Screenshots
+*.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Everything else in the home directory
+AppData/
+Documents/
+Desktop/
+Downloads/
+Pictures/
+Music/
+Videos/
+OneDrive/
+Contacts/
+Favorites/
+Links/
+Saved Games/
+Searches/
+curseforge/
