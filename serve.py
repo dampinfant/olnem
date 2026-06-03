@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
 SCRAPER_WM      = os.path.join(BASE_DIR, "weedmaps_flower.py")
 SCRAPER_LF      = os.path.join(BASE_DIR, "leafly_flower.py")
+SCRAPER_IHJ     = os.path.join(BASE_DIR, "iheartjane_flower.py")
 CSV_PATH        = os.path.join(BASE_DIR, "flower_results.csv")
 LOCATION_FILE   = os.path.join(BASE_DIR, "location.json")
 PYTHON          = sys.executable
@@ -104,6 +105,12 @@ def _run_scraper(radius: str, latlng: str, label: str):
         err = _run_one([PYTHON, SCRAPER_LF] + args)
         if err:
             errors.append(f"Leafly: {err}")
+
+    # iHeartJane third (merges into flower_results.csv)
+    if os.path.exists(SCRAPER_IHJ):
+        err = _run_one([PYTHON, SCRAPER_IHJ] + args)
+        if err:
+            errors.append(f"iHeartJane: {err}")
 
     with _lock:
         _status["error"]   = "\n".join(errors) if errors else None

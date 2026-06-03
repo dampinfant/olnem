@@ -254,8 +254,9 @@
       vertical-align: middle;
       letter-spacing: .2px;
     }
-    .src-weedmaps { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
-    .src-leafly   { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+    .src-weedmaps   { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .src-leafly     { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+    .src-iheartjane { background: #fce4ec; color: #880e4f; border: 1px solid #f48fb1; }
 
     .score-col { white-space: nowrap; }
 
@@ -319,8 +320,9 @@
   <div class="pill-group" id="source-filters">
     <span class="pill-label">Source:</span>
     <button id="src-all"      class="active" data-src="">All</button>
-    <button id="src-weedmaps" data-src="weedmaps">Weedmaps</button>
-    <button id="src-leafly"   data-src="leafly">Leafly</button>
+    <button id="src-weedmaps"   data-src="weedmaps">Weedmaps</button>
+    <button id="src-leafly"     data-src="leafly">Leafly</button>
+    <button id="src-iheartjane" data-src="iheartjane">iHeartJane</button>
   </div>
   <div class="pill-group" id="flag-filters">
     <span class="pill-label">Hide:</span>
@@ -554,7 +556,8 @@
       ).join('');
 
       const src = r.source || 'weedmaps';
-      const srcBadge = `<span class="src-badge src-${src}" title="Source: ${src}">${src === 'weedmaps' ? 'WM' : 'LF'}</span>`;
+      const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : 'IHJ';
+      const srcBadge = `<span class="src-badge src-${src}" title="Source: ${src}">${srcLabel}</span>`;
 
       return `
       <tr>

@@ -7,10 +7,14 @@ location.json
 # Temp dev/debug scripts
 inspect_api.py
 inspect_leafly.py
+inspect_dutchie.py
+probe_iheartjane.py
 screenshot_*.py
 
 # Scraper logs and intermediate data
 leafly_api_log.json
+dutchie_api_log.json
+flower_results.txt
 
 # Screenshots
 *.png
