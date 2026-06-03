@@ -1,5 +1,6 @@
 # Generated data — recreated on every scrape run
 flower_results.csv
+snapshots/
 
 # User-specific saved location
 location.json

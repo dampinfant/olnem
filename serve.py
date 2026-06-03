@@ -12,6 +12,7 @@ Flower Finder server.
 import http.server
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -25,6 +26,7 @@ SCRAPER_WM      = os.path.join(BASE_DIR, "weedmaps_flower.py")
 SCRAPER_LF      = os.path.join(BASE_DIR, "leafly_flower.py")
 SCRAPER_IHJ     = os.path.join(BASE_DIR, "iheartjane_flower.py")
 CSV_PATH        = os.path.join(BASE_DIR, "flower_results.csv")
+SNAPSHOTS_DIR   = os.path.join(BASE_DIR, "snapshots")
 LOCATION_FILE   = os.path.join(BASE_DIR, "location.json")
 PYTHON          = sys.executable
 
@@ -111,6 +113,11 @@ def _run_scraper(radius: str, latlng: str, label: str):
         err = _run_one([PYTHON, SCRAPER_IHJ] + args)
         if err:
             errors.append(f"iHeartJane: {err}")
+
+    if os.path.exists(CSV_PATH):
+        os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        shutil.copy2(CSV_PATH, os.path.join(SNAPSHOTS_DIR, f"{stamp}.csv"))
 
     with _lock:
         _status["error"]   = "\n".join(errors) if errors else None
