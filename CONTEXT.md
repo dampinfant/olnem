@@ -30,12 +30,15 @@ Git: `C:\Program Files\Git\cmd\git.exe` (add to PATH if needed)
 ## CSV schema (flower_results.csv)
 All scrapers write to this unified CSV:
 ```
-ppg, price, grams, label, dist, product, brand, dispensary, on_sale, updated_at, source
+ppg, price, grams, label, dist, product, brand, dispensary, on_sale, updated_at, source, listing_url
 ```
 - `on_sale`: string `"True"` / `"False"` (Python csv.DictWriter convention)
 - `source`: `"weedmaps"` | `"leafly"` | `"iheartjane"` | `"dutchie"` (planned)
 - `updated_at`: populated by Weedmaps only; empty string for other sources
 - `label`: human-readable size (e.g., "1/8 oz", "3.5g"); Leafly uses `normalizedQuantity`
+- `listing_url`: direct URL to the dispensary's menu page on the source platform (or the
+  dispensary's own website for iHeartJane). Empty string for legacy rows; the UI constructs
+  a best-effort fallback from the dispensary name for weedmaps/leafly rows.
 
 ## Deduplication key (cross-source merge)
 `(dispensary.lower().strip(), brand.lower().strip(), round(grams,1), round(price,2))`

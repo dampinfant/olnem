@@ -28,7 +28,7 @@ DMERCH_BASE = "https://dmerch.iheartjane.com/v2/smart"
 
 CSV_PATH   = "flower_results.csv"
 CSV_FIELDS = ["ppg", "price", "grams", "label", "dist", "product", "brand",
-              "dispensary", "on_sale", "updated_at", "source"]
+              "dispensary", "on_sale", "updated_at", "source", "listing_url"]
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -306,6 +306,8 @@ async def fetch_store(context, store, sem):
             for p in all_products:
                 sa = p.get("search_attributes", {})
                 rows.extend(rows_from_product(sa, name, dist))
+            for row in rows:
+                row["listing_url"] = boost_url
 
             return name, dist, len(all_products), rows, None
 
@@ -412,7 +414,7 @@ async def async_main():
     merged.sort(key=lambda r: float(r.get("ppg", 0)))
 
     with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore", restval="")
         writer.writeheader()
         writer.writerows(merged)
 

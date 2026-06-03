@@ -256,6 +256,9 @@ async def fetch_dispensary(context, slug: str, disp_name: str, dist: float,
             await asyncio.sleep(1.0)   # let page JS settle; shorter than main page (1 s vs 2 s)
             items = await fetch_flower_menu(page, slug)
             rows  = [r for item in items for r in rows_from_item(item, disp_name, dist)]
+            listing_url = f"https://weedmaps.com/dispensary/{slug}/menu"
+            for r in rows:
+                r["listing_url"] = listing_url
             return disp_name, dist, len(items), rows, None
         except Exception as exc:
             return disp_name, dist, 0, [], str(exc)
@@ -376,8 +379,10 @@ async def async_main():
         writer = csv.DictWriter(
             f,
             fieldnames=["ppg", "price", "grams", "label", "dist",
-                        "product", "brand", "dispensary", "on_sale", "updated_at", "source"],
+                        "product", "brand", "dispensary", "on_sale", "updated_at", "source",
+                        "listing_url"],
             extrasaction="ignore",
+            restval="",
         )
         writer.writeheader()
         writer.writerows(rows)

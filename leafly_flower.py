@@ -37,7 +37,7 @@ _UA = (
 
 CSV_PATH   = "flower_results.csv"
 CSV_FIELDS = ["ppg", "price", "grams", "label", "dist", "product", "brand",
-              "dispensary", "on_sale", "updated_at", "source"]
+              "dispensary", "on_sale", "updated_at", "source", "listing_url"]
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -229,6 +229,9 @@ async def fetch_dispensary(context, slug: str, disp_name: str, dist: float,
                 await asyncio.sleep(0.05)
 
             rows = [row for item in all_items for row in rows_from_item(item, dist)]
+            listing_url = f"https://www.leafly.com/dispensary-info/{slug}/menu"
+            for row in rows:
+                row["listing_url"] = listing_url
             return disp_name, dist, len(all_items), rows, None
 
         except Exception as exc:
@@ -351,7 +354,7 @@ async def async_main():
     merged.sort(key=lambda r: float(r.get("ppg", 0)))
 
     with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore", restval="")
         writer.writeheader()
         writer.writerows(merged)
 

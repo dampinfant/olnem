@@ -260,6 +260,18 @@
 
     .score-col { white-space: nowrap; }
 
+    .listing-link {
+      font-size: .72rem;
+      color: var(--muted);
+      text-decoration: none;
+      margin-left: 5px;
+      opacity: 0;
+      vertical-align: middle;
+      transition: opacity .15s, color .15s;
+    }
+    tbody tr:hover .listing-link { opacity: 1; }
+    .listing-link:hover { color: var(--accent); }
+
     .empty {
       text-align: center;
       padding: 48px;
@@ -559,6 +571,18 @@
       const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : 'IHJ';
       const srcBadge = `<span class="src-badge src-${src}" title="Source: ${src}">${srcLabel}</span>`;
 
+      // Resolve listing URL — use stored value or construct a best-effort fallback
+      let listingUrl = r.listing_url || '';
+      if (!listingUrl) {
+        const slug = r.dispensary.toLowerCase().trim()
+          .replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+        if (src === 'weedmaps') listingUrl = `https://weedmaps.com/dispensary/${slug}/menu`;
+        else if (src === 'leafly') listingUrl = `https://www.leafly.com/dispensary-info/${slug}/menu`;
+      }
+      const listingLink = listingUrl
+        ? `<a class="listing-link" href="${listingUrl}" target="_blank" rel="noopener" title="Open menu page">&#8599;</a>`
+        : '';
+
       return `
       <tr>
         <td class="ppg">$${Number(r.ppg).toFixed(2)}</td>
@@ -572,7 +596,7 @@
         </td>
         <td class="brand">${esc(r.brand || "—")}</td>
         <td class="score-col">${scoreBadge}</td>
-        <td class="disp">${esc(r.dispensary)}</td>
+        <td class="disp">${esc(r.dispensary)}${listingLink}</td>
         <td class="dist">${Number(r.dist).toFixed(1)} mi</td>
       </tr>`;
     }).join("");
