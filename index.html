@@ -259,6 +259,7 @@
     .src-leafly     { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
     .src-iheartjane { background: #fce4ec; color: #880e4f; border: 1px solid #f48fb1; }
     .src-eaze       { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+    .src-grassdoor  { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
 
     .craft-badge {
       display: inline-block;
@@ -465,6 +466,7 @@
     <button id="src-leafly"     data-src="leafly">Leafly</button>
     <button id="src-iheartjane" data-src="iheartjane">iHeartJane</button>
     <button id="src-eaze"       data-src="eaze">Eaze</button>
+    <button id="src-grassdoor"  data-src="grassdoor">Grassdoor</button>
   </div>
   <div class="pill-group" id="flag-filters">
     <span class="pill-label">Hide:</span>
@@ -653,7 +655,7 @@
     }
     tbody.innerHTML = sorted.map(e => {
       const src = e.source || 'weedmaps';
-      const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : src === 'iheartjane' ? 'IHJ' : src === 'eaze' ? 'EZ' : src.slice(0,3).toUpperCase();
+      const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : src === 'iheartjane' ? 'IHJ' : src === 'eaze' ? 'EZ' : src === 'grassdoor' ? 'GD' : src.slice(0,3).toUpperCase();
       const srcBadge = `<span class="src-badge src-${src}">${srcLabel}</span>`;
       const gVal = parseFloat(e.grams);
       return `<tr>
@@ -947,7 +949,7 @@
       ).join('');
 
       const src = r.source || 'weedmaps';
-      const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : src === 'iheartjane' ? 'IHJ' : src === 'eaze' ? 'EZ' : src.slice(0,3).toUpperCase();
+      const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : src === 'iheartjane' ? 'IHJ' : src === 'eaze' ? 'EZ' : src === 'grassdoor' ? 'GD' : src.slice(0,3).toUpperCase();
       const srcBadge = `<span class="src-badge src-${src}" title="Source: ${src}">${srcLabel}</span>`;
 
       // Resolve listing URL — use stored value or construct a best-effort fallback
@@ -987,12 +989,17 @@
 
   // ── Weight pills ─────────────────────────────────────────────────────────
   function populateWeightPills() {
-    const unique = [...new Set(allRows.map(r => Number(r.grams)))].sort((a, b) => a - b);
     const container = document.getElementById("weight-pills");
+    // Keep only the label span; remove any previously rendered pill buttons
+    const label = container.querySelector('.pill-label');
+    container.innerHTML = '';
+    if (label) container.appendChild(label);
+    const unique = [...new Set(allRows.map(r => Number(r.grams)))].sort((a, b) => a - b);
     unique.forEach(g => {
       const btn = document.createElement("button");
       btn.textContent = weightLabel(g);
       btn.title = `${Number(g).toFixed(1)}g`;
+      if (selectedWeights.has(g)) btn.classList.add("active");
       btn.addEventListener("click", () => {
         if (selectedWeights.has(g)) {
           selectedWeights.delete(g);
@@ -1009,13 +1016,17 @@
 
   // ── Dispensary dropdown ───────────────────────────────────────────────────
   function populateDispensaryFilter() {
+    const sel  = document.getElementById("dispensary");
+    const prev = sel.value;                        // preserve current selection across reloads
+    while (sel.options.length > 1) sel.remove(1); // clear all but the "All dispensaries" option
     const names = [...new Set(allRows.map(r => r.dispensary))].sort();
-    const sel   = document.getElementById("dispensary");
     names.forEach(n => {
       const opt = document.createElement("option");
       opt.value = opt.textContent = n;
       sel.appendChild(opt);
     });
+    sel.value = prev;
+    if (sel.value !== prev) sel.value = ''; // reset if selected dispensary no longer in data
   }
 
   // ── Column sort on header click ───────────────────────────────────────────

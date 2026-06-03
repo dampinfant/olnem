@@ -30,6 +30,7 @@ SCRAPER_WM      = os.path.join(BASE_DIR, "weedmaps_flower.py")
 SCRAPER_LF      = os.path.join(BASE_DIR, "leafly_flower.py")
 SCRAPER_IHJ     = os.path.join(BASE_DIR, "iheartjane_flower.py")
 SCRAPER_EZ      = os.path.join(BASE_DIR, "eaze_flower.py")
+SCRAPER_GD      = os.path.join(BASE_DIR, "grassdoor_flower.py")
 CSV_PATH        = os.path.join(BASE_DIR, "flower_results.csv")
 SNAPSHOTS_DIR   = os.path.join(BASE_DIR, "snapshots")
 LOCATION_FILE   = os.path.join(BASE_DIR, "location.json")
@@ -124,6 +125,12 @@ def _run_scraper(radius: str, latlng: str, label: str):
         err = _run_one([PYTHON, SCRAPER_EZ] + args)
         if err:
             errors.append(f"Eaze: {err}")
+
+    # Grassdoor fifth (merges into flower_results.csv)
+    if os.path.exists(SCRAPER_GD):
+        err = _run_one([PYTHON, SCRAPER_GD] + args)
+        if err:
+            errors.append(f"Grassdoor: {err}")
 
     if os.path.exists(CSV_PATH):
         os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
