@@ -188,6 +188,7 @@
     thead th:hover { background: #235c43; }
     thead th .sort-icon { margin-left: 5px; opacity: .55; font-size: .75rem; }
     thead th.sorted   .sort-icon { opacity: 1; }
+    thead th.gsorted  .sort-icon { opacity: 1; }
 
     tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
     tbody tr:last-child { border-bottom: none; }
@@ -312,6 +313,104 @@
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+    /* ── Tab bar ── */
+    #tab-bar {
+      background: var(--surface);
+      border-bottom: 2px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      gap: 0;
+    }
+    .tab-btn {
+      padding: 10px 16px;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      background: none;
+      cursor: pointer;
+      font-size: .875rem;
+      color: var(--muted);
+      transition: color .12s, border-color .12s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab-count {
+      font-size: .72rem;
+      background: #e5e7eb;
+      color: var(--muted);
+      border-radius: 10px;
+      padding: 1px 6px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+    .tab-count.has-items { background: #fef3c7; color: #92400e; }
+
+    /* ── Restock patterns panel ── */
+    #restock-wrap { padding: 24px 32px; }
+    .restock-empty {
+      text-align: center;
+      padding: 48px;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+    .restock-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .restock-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .restock-card.collecting { opacity: .58; }
+    .rc-name {
+      font-size: .88rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rc-detail {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .rc-detail strong { color: var(--text); }
+    .rc-dim {
+      font-size: .78rem;
+      color: var(--muted);
+      font-style: italic;
+      margin: 6px 0 2px;
+    }
+    .conf-track {
+      background: #e5e7eb;
+      border-radius: 3px;
+      height: 5px;
+      margin-top: 10px;
+      overflow: hidden;
+    }
+    .conf-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+    .rc-meta { font-size: .7rem; color: var(--muted); margin-top: 7px; }
+
+    /* ── Inventory presence dots ── */
+    .inv-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      margin-left: 5px;
+      vertical-align: middle;
+      cursor: help;
+      flex-shrink: 0;
+    }
+    .inv-dot-current { background: #22c55e; }
+    .inv-dot-recent  { background: #eab308; }
+    .inv-dot-old     { background: #9ca3af; }
   </style>
 </head>
 <body>
@@ -378,6 +477,12 @@
   <span id="result-count"></span>
 </div>
 
+<div id="tab-bar">
+  <button class="tab-btn active" data-tab="available">Available <span class="tab-count" id="avail-count"></span></button>
+  <button class="tab-btn" data-tab="gone">Recently Gone <span class="tab-count" id="gone-count"></span></button>
+  <button class="tab-btn" data-tab="restock">Restock Patterns</button>
+</div>
+
 <div id="table-wrap">
   <table id="results">
     <thead>
@@ -396,6 +501,26 @@
   </table>
 </div>
 
+<div id="gone-wrap" style="display:none; padding: 24px 32px; overflow-x: auto;">
+  <table id="gone-table">
+    <thead>
+      <tr>
+        <th data-gcol="brand"       >Strain <span class="sort-icon">⇅</span></th>
+        <th data-gcol="dispensary"  >Dispensary <span class="sort-icon">⇅</span></th>
+        <th data-gcol="grams"       >Weight <span class="sort-icon">⇅</span></th>
+        <th data-gcol="last_price"  >Last Price <span class="sort-icon">⇅</span></th>
+        <th data-gcol="source"      >Source <span class="sort-icon">⇅</span></th>
+        <th data-gcol="last_seen" class="gsorted">Last Seen <span class="sort-icon">▼</span></th>
+      </tr>
+    </thead>
+    <tbody id="gone-tbody"></tbody>
+  </table>
+</div>
+
+<div id="restock-wrap" style="display:none">
+  <div id="restock-grid" class="restock-grid"></div>
+</div>
+
 <script>
   let allRows = [];
   let sortCol = "ppg";
@@ -408,6 +533,11 @@
   let craftBrands    = new Set();     // lowercase brand names from craft_brands.json
   let priceDeltaMap  = {};            // "disp||brand||grams||src" → { old_price, drop }
   let snapshotTime   = null;          // ISO string of the previous snapshot used for delta
+  let inventoryHistory = {};          // full inventory_history.json keyed by composite key
+  let restockData      = {};          // full restock_patterns.json keyed by dispensary name
+  let activeTab        = 'available'; // 'available' | 'gone' | 'restock'
+  let goneSortCol      = 'last_seen';
+  let goneSortAsc      = false;       // default: most recently gone first
 
   fetch('craft_brands.json')
     .then(r => r.json())
@@ -450,6 +580,164 @@
       attachPriceDrops();
       render();
     } catch {}
+  }
+
+  // ── Inventory signal helpers ─────────────────────────────────────────────
+  async function fetchInventory() {
+    try {
+      const resp = await fetch('/api/inventory');
+      if (!resp.ok) return;
+      inventoryHistory = await resp.json();
+      attachInventoryData();
+      render();
+    } catch {}
+  }
+
+  function attachInventoryData() {
+    for (const r of allRows) {
+      const entry = inventoryHistory[buildDeltaKey(r)];
+      if (entry) {
+        r._inv_cycles_ago = entry.consecutive_missing || 0;
+        r._inv_last_seen  = entry.last_seen || null;
+      } else {
+        r._inv_cycles_ago = null;
+        r._inv_last_seen  = null;
+      }
+    }
+  }
+
+  function buildGoneRows() {
+    return Object.values(inventoryHistory).filter(e =>
+      (e.times_seen || 0) >= 3 &&
+      (e.consecutive_missing || 0) >= 1 &&
+      (e.consecutive_missing || 0) <= 2
+    );
+  }
+
+  function renderGoneTable() {
+    const f = getFilters();
+    const goneRows = buildGoneRows().filter(e => {
+      const name = ((e.brand || e.product) || '').toLowerCase();
+      const disp = (e.dispensary || '').toLowerCase();
+      if (f.search && !name.includes(f.search) && !disp.includes(f.search)) return false;
+      if (f.disp && e.dispensary !== f.disp) return false;
+      if (selectedWeights.size > 0 && !selectedWeights.has(parseFloat(e.grams))) return false;
+      if (sourceFilter && (e.source || 'weedmaps') !== sourceFilter) return false;
+      if (e.last_price != null && f.priceMin > 0 && e.last_price < f.priceMin) return false;
+      if (e.last_price != null && f.priceMax < Infinity && e.last_price > f.priceMax) return false;
+      return true;
+    });
+
+    const sorted = [...goneRows].sort((a, b) => {
+      let av = a[goneSortCol], bv = b[goneSortCol];
+      if (goneSortCol === 'last_seen') { av = av || ''; bv = bv || ''; }
+      if (goneSortCol === 'grams' || goneSortCol === 'last_price') {
+        av = parseFloat(av) || 0; bv = parseFloat(bv) || 0;
+      }
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      return goneSortAsc ? cmp : -cmp;
+    });
+
+    const countEl = document.getElementById('gone-count');
+    countEl.textContent = sorted.length || '';
+    countEl.classList.toggle('has-items', sorted.length > 0);
+
+    const tbody = document.getElementById('gone-tbody');
+    if (!sorted.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">No recently discontinued listings — run a few scrape cycles to build history.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = sorted.map(e => {
+      const src = e.source || 'weedmaps';
+      const srcLabel = src === 'weedmaps' ? 'WM' : src === 'leafly' ? 'LF' : 'IHJ';
+      const srcBadge = `<span class="src-badge src-${src}">${srcLabel}</span>`;
+      const gVal = parseFloat(e.grams);
+      return `<tr>
+        <td>${esc(e.brand || e.product || '—')}</td>
+        <td class="disp">${esc(e.dispensary)}</td>
+        <td class="wt">${isNaN(gVal) ? esc(e.grams) : weightLabel(gVal)}</td>
+        <td class="price">${e.last_price ? '$' + Number(e.last_price).toFixed(2) : '—'}</td>
+        <td>${srcBadge}</td>
+        <td title="${e.last_seen || ''}" style="white-space:nowrap">${fmtRelative(e.last_seen)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Restock pattern helpers ──────────────────────────────────────────────
+  const FULL_DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+  function fmtHour(h) {
+    if (h === 0)  return '12am';
+    if (h < 12)   return h + 'am';
+    if (h === 12) return '12pm';
+    return (h - 12) + 'pm';
+  }
+
+  async function fetchRestock() {
+    try {
+      const resp = await fetch('/api/restock');
+      if (!resp.ok) return;
+      restockData = await resp.json();
+      renderRestockPanel();
+    } catch {}
+  }
+
+  function renderRestockPanel() {
+    const THRESHOLD = 112;   // ~14 days at 8 scrapes/day
+    const grid = document.getElementById('restock-grid');
+
+    const entries = Object.entries(restockData);
+    if (!entries.length) {
+      grid.innerHTML = '<p class="restock-empty">No restock pattern data yet — run a few scrape cycles to start collecting.</p>';
+      return;
+    }
+
+    // Sort: confident patterns first, then by confidence desc, collecting-data last
+    entries.sort(([, a], [, b]) => {
+      const ac = (a.snapshots_analyzed || 0) < THRESHOLD;
+      const bc = (b.snapshots_analyzed || 0) < THRESHOLD;
+      if (ac !== bc) return ac ? 1 : -1;
+      return (b.confidence || 0) - (a.confidence || 0);
+    });
+
+    grid.innerHTML = entries.map(([name, d]) => {
+      const collecting  = (d.snapshots_analyzed || 0) < THRESHOLD;
+      const conf        = d.confidence || 0;
+      const showPattern = !collecting && conf > 0.4;
+
+      const daysHtml = showPattern && d.top_days && d.top_days.length
+        ? `<div class="rc-detail">📅 <strong>${d.top_days.map(i => FULL_DAY_NAMES[i]).join(', ')}</strong></div>`
+        : '';
+
+      let hoursHtml = '';
+      if (showPattern && d.hour_range) {
+        const [lo, hi] = d.hour_range;
+        hoursHtml = lo === hi
+          ? `<div class="rc-detail">🕐 typically around <strong>${fmtHour(lo)}</strong></div>`
+          : `<div class="rc-detail">🕐 between <strong>${fmtHour(lo)}–${fmtHour(hi)}</strong></div>`;
+      }
+
+      const dimHtml = collecting
+        ? `<div class="rc-dim">Collecting data… (${d.snapshots_analyzed || 0} / ${THRESHOLD} snapshots)</div>`
+        : !showPattern
+          ? `<div class="rc-dim">No consistent pattern detected yet.</div>`
+          : '';
+
+      const confPct   = collecting ? 0 : Math.round(conf * 100);
+      const confColor = conf >= 0.7 ? '#22c55e' : conf >= 0.4 ? '#eab308' : '#9ca3af';
+      const metaHtml  = `<div class="rc-meta">${d.restock_event_count || 0} restock event${(d.restock_event_count || 0) !== 1 ? 's' : ''}${d.first_snapshot_date ? ' · since ' + d.first_snapshot_date : ''}</div>`;
+
+      return `<div class="restock-card${collecting ? ' collecting' : ''}">
+        <div class="rc-name" title="${esc(name)}">${esc(name)}</div>
+        ${daysHtml}${hoursHtml}${dimHtml}
+        <div class="conf-track" title="Pattern confidence: ${confPct}%">
+          <div class="conf-fill" style="width:${confPct}%;background:${confColor}"></div>
+        </div>
+        ${metaHtml}
+      </div>`;
+    }).join('');
   }
 
   // ── Brand reputation scoring ──────────────────────────────────────────────
@@ -560,10 +848,13 @@
       computeDealFlags(allRows);
       const brandScores = computeBrandScores(allRows, scoringMode);
       for (const r of allRows) r._brand_score = brandScores[r.brand || ''] ?? 0;
+      attachInventoryData();
       populateDispensaryFilter();
       populateWeightPills();
       render();
       fetchPriceDelta();
+      fetchInventory();
+      fetchRestock();
     },
     error(err) {
       document.getElementById("tbody").innerHTML =
@@ -615,6 +906,8 @@
 
     document.getElementById("result-count").textContent =
       `${sorted.length.toLocaleString()} of ${allRows.length.toLocaleString()} results`;
+    document.getElementById("avail-count").textContent = sorted.length || '';
+    renderGoneTable();
 
     const tbody = document.getElementById("tbody");
     if (!sorted.length) {
@@ -628,6 +921,18 @@
       const scoreBadge = r.brand
         ? `<span class="score-badge ${scoreClass}" title="Brand reputation score (distribution, variety, price consistency)">${score}</span>`
         : `<span class="score-na">—</span>`;
+
+      const cyclesAgo = r._inv_cycles_ago;
+      const dotClass = cyclesAgo === null ? ''
+        : cyclesAgo === 0 ? 'inv-dot-current'
+        : cyclesAgo === 1 ? 'inv-dot-recent'
+        : 'inv-dot-old';
+      const dotTip = cyclesAgo === null ? ''
+        : cyclesAgo === 0 ? `Confirmed in latest scrape${r._inv_last_seen ? ' · ' + fmtRelative(r._inv_last_seen) : ''}`
+        : `Last seen ${fmtRelative(r._inv_last_seen)} (${cyclesAgo} cycle${cyclesAgo === 1 ? '' : 's'} ago)`;
+      const invDot = dotClass
+        ? `<span class="inv-dot ${dotClass}" title="${dotTip}"></span>`
+        : '';
 
       const delta = r._price_drop;
       const dropBadge = delta
@@ -668,7 +973,7 @@
         </td>
         <td class="brand">${esc(r.brand || "—")}${r.brand && craftBrands.has(r.brand.toLowerCase()) ? '<span class="craft-badge" title="Pinned craft brand">CRAFT</span>' : ''}</td>
         <td class="score-col">${scoreBadge}</td>
-        <td class="disp">${esc(r.dispensary)}${listingLink}</td>
+        <td class="disp">${esc(r.dispensary)}${listingLink}${invDot}</td>
         <td class="dist">${Number(r.dist).toFixed(1)} mi</td>
       </tr>`;
     }).join("");
@@ -908,10 +1213,13 @@
         computeDealFlags(allRows);
         const brandScores = computeBrandScores(allRows, scoringMode);
         for (const r of allRows) r._brand_score = brandScores[r.brand || ''] ?? 0;
+        attachInventoryData();
         populateDispensaryFilter();
         populateWeightPills();
         render();
         fetchPriceDelta();
+        fetchInventory();
+        fetchRestock();
       }
     });
   }
@@ -969,6 +1277,38 @@
   document.querySelectorAll('.rpill').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.dataset.r !== currentRadius) doRefresh(btn.dataset.r);
+    });
+  });
+
+  // ── Gone table column sort ────────────────────────────────────────────────
+  document.querySelectorAll('#gone-table thead th').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.gcol;
+      if (goneSortCol === col) { goneSortAsc = !goneSortAsc; }
+      else { goneSortCol = col; goneSortAsc = col !== 'last_seen'; }
+      document.querySelectorAll('#gone-table thead th').forEach(t => {
+        const icon = t.querySelector('.sort-icon');
+        if (t.dataset.gcol === goneSortCol) {
+          t.classList.add('gsorted');
+          icon.textContent = goneSortAsc ? '▲' : '▼';
+        } else {
+          t.classList.remove('gsorted');
+          icon.textContent = '⇅';
+        }
+      });
+      renderGoneTable();
+    });
+  });
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeTab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === activeTab));
+      document.getElementById('table-wrap').style.display   = activeTab === 'available' ? '' : 'none';
+      document.getElementById('gone-wrap').style.display    = activeTab === 'gone'      ? '' : 'none';
+      document.getElementById('restock-wrap').style.display = activeTab === 'restock'   ? '' : 'none';
     });
   });
 

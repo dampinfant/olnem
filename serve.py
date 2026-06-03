@@ -22,6 +22,9 @@ import urllib.request
 import webbrowser
 from datetime import datetime, timezone
 
+import inventory_signals
+import restock_patterns
+
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
 SCRAPER_WM      = os.path.join(BASE_DIR, "weedmaps_flower.py")
 SCRAPER_LF      = os.path.join(BASE_DIR, "leafly_flower.py")
@@ -119,6 +122,14 @@ def _run_scraper(radius: str, latlng: str, label: str):
         os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         shutil.copy2(CSV_PATH, os.path.join(SNAPSHOTS_DIR, f"{stamp}.csv"))
+        try:
+            inventory_signals.update(CSV_PATH)
+        except Exception:
+            pass
+        try:
+            restock_patterns.update()
+        except Exception:
+            pass
 
     with _lock:
         _status["error"]   = "\n".join(errors) if errors else None
@@ -210,6 +221,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._json({"drops": drops, "snapshot_time": snap_iso})
             except Exception as exc:
                 self._json({"drops": {}, "snapshot_time": None, "error": str(exc)})
+
+        elif self.path == "/api/inventory":
+            try:
+                self._json(inventory_signals.get_signals())
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif self.path == "/api/restock":
+            try:
+                self._json(restock_patterns.get_patterns())
+            except Exception as exc:
+                self._json({"error": str(exc)})
 
         elif self.path.startswith("/api/geocode"):
             parsed = urllib.parse.urlparse(self.path)
