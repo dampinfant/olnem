@@ -9,6 +9,7 @@ Flower Finder server.
     POST /refresh              → body { radius, latlng, location_label }
                                  starts weedmaps_flower.py in a background thread
 """
+import csv
 import http.server
 import json
 import os
@@ -124,6 +125,29 @@ def _run_scraper(radius: str, latlng: str, label: str):
         _status["running"] = False
 
 
+def _load_csv_price_map(path: str) -> dict:
+    """Return dict keyed by (dispensary, brand, grams, source) → lowest price seen."""
+    result = {}
+    try:
+        with open(path, newline='', encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                try:
+                    key = (
+                        row.get('dispensary', '').lower().strip(),
+                        row.get('brand', '').lower().strip(),
+                        round(float(row.get('grams') or 0), 1),
+                        row.get('source', 'weedmaps').lower().strip(),
+                    )
+                    price = float(row.get('price') or 0)
+                    if price > 0 and (key not in result or price < result[key]):
+                        result[key] = price
+                except (ValueError, KeyError):
+                    pass
+    except Exception:
+        pass
+    return result
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
@@ -138,6 +162,54 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "location_label": _status["location_label"],
                 }
             self._json(payload)
+
+        elif self.path == "/api/price_delta":
+            try:
+                if not os.path.isdir(SNAPSHOTS_DIR) or not os.path.exists(CSV_PATH):
+                    self._json({"drops": {}, "snapshot_time": None})
+                    return
+
+                csv_mtime = os.path.getmtime(CSV_PATH)
+                snaps = sorted(
+                    [f for f in os.listdir(SNAPSHOTS_DIR) if f.endswith('.csv')],
+                    reverse=True,
+                )
+
+                # Find the most recent snapshot that predates the current CSV by >5s.
+                # (shutil.copy2 preserves mtime, so the snapshot taken from the current
+                # CSV run will share its mtime — skip it and use the one before it.)
+                prev_path = None
+                for snap_name in snaps:
+                    sp = os.path.join(SNAPSHOTS_DIR, snap_name)
+                    if os.path.getmtime(sp) < csv_mtime - 5:
+                        prev_path = sp
+                        break
+
+                if not prev_path:
+                    self._json({"drops": {}, "snapshot_time": None})
+                    return
+
+                cur_map  = _load_csv_price_map(CSV_PATH)
+                prev_map = _load_csv_price_map(prev_path)
+
+                drops = {}
+                for key, cur_price in cur_map.items():
+                    old_price = prev_map.get(key)
+                    if old_price is not None and cur_price < old_price - 0.005:
+                        disp, brand, grams, source = key
+                        json_key = f"{disp}||{brand}||{grams}||{source}"
+                        drops[json_key] = {
+                            "old_price": round(old_price, 2),
+                            "new_price": round(cur_price, 2),
+                            "drop":      round(old_price - cur_price, 2),
+                        }
+
+                snap_iso = datetime.fromtimestamp(
+                    os.path.getmtime(prev_path), tz=timezone.utc
+                ).isoformat()
+                self._json({"drops": drops, "snapshot_time": snap_iso})
+            except Exception as exc:
+                self._json({"drops": {}, "snapshot_time": None, "error": str(exc)})
 
         elif self.path.startswith("/api/geocode"):
             parsed = urllib.parse.urlparse(self.path)

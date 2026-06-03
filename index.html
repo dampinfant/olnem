@@ -272,6 +272,21 @@
       letter-spacing: .2px;
     }
 
+    .price-drop-badge {
+      display: inline-block;
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #86efac;
+      letter-spacing: .2px;
+      cursor: help;
+    }
+
     .score-col { white-space: nowrap; }
 
     .listing-link {
@@ -391,6 +406,8 @@
   let scoringMode    = 'mainstream';  // 'mainstream' | 'craft'
   let sourceFilter   = '';            // '' = all, 'weedmaps', 'leafly'
   let craftBrands    = new Set();     // lowercase brand names from craft_brands.json
+  let priceDeltaMap  = {};            // "disp||brand||grams||src" → { old_price, drop }
+  let snapshotTime   = null;          // ISO string of the previous snapshot used for delta
 
   fetch('craft_brands.json')
     .then(r => r.json())
@@ -406,6 +423,33 @@
   };
   function weightLabel(g) {
     return WEIGHT_LABELS[g] ?? `${Number(g).toFixed(g % 1 === 0 ? 0 : 1)}g`;
+  }
+
+  // ── Price delta helpers ───────────────────────────────────────────────────
+  function buildDeltaKey(r) {
+    const disp   = (r.dispensary || '').toLowerCase().trim();
+    const brand  = (r.brand      || '').toLowerCase().trim();
+    const grams  = Math.round(parseFloat(r.grams) * 10) / 10;
+    const source = (r.source     || 'weedmaps').toLowerCase().trim();
+    return `${disp}||${brand}||${grams}||${source}`;
+  }
+
+  function attachPriceDrops() {
+    for (const r of allRows) {
+      r._price_drop = priceDeltaMap[buildDeltaKey(r)] || null;
+    }
+  }
+
+  async function fetchPriceDelta() {
+    try {
+      const resp = await fetch('/api/price_delta');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      priceDeltaMap = data.drops || {};
+      snapshotTime  = data.snapshot_time || null;
+      attachPriceDrops();
+      render();
+    } catch {}
   }
 
   // ── Brand reputation scoring ──────────────────────────────────────────────
@@ -519,6 +563,7 @@
       populateDispensaryFilter();
       populateWeightPills();
       render();
+      fetchPriceDelta();
     },
     error(err) {
       document.getElementById("tbody").innerHTML =
@@ -584,6 +629,11 @@
         ? `<span class="score-badge ${scoreClass}" title="Brand reputation score (distribution, variety, price consistency)">${score}</span>`
         : `<span class="score-na">—</span>`;
 
+      const delta = r._price_drop;
+      const dropBadge = delta
+        ? `<span class="price-drop-badge" title="Was $${delta.old_price.toFixed(2)}${snapshotTime ? ' · ' + fmtRelative(snapshotTime) : ''}">↓$${delta.drop.toFixed(2)}</span>`
+        : '';
+
       const flagBadges = (r._flags || []).map(f =>
         f === 'fake_sale'  ? `<span class="flag-badge flag-sale"  title="On-sale price is at or above the $${r._medPpg?.toFixed(2)}/g median for this size — discount may be minimal">?SALE</span>` :
         f === 'bait_price' ? `<span class="flag-badge flag-bait"  title="$/g is more than 50% below the $${r._medPpg?.toFixed(2)}/g median — verify this item is in stock">⚠LOW</span>` : ''
@@ -608,7 +658,7 @@
       return `
       <tr>
         <td class="ppg">$${Number(r.ppg).toFixed(2)}</td>
-        <td class="price">$${Number(r.price).toFixed(2)}</td>
+        <td class="price">$${Number(r.price).toFixed(2)}${dropBadge}</td>
         <td class="wt">${Number(r.grams).toFixed(1)}g</td>
         <td class="product" title="${r.updated_at ? 'Listing updated ' + fmtRelative(r.updated_at) : ''}">
           ${esc(r.product)}
@@ -861,6 +911,7 @@
         populateDispensaryFilter();
         populateWeightPills();
         render();
+        fetchPriceDelta();
       }
     });
   }
