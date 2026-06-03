@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Eaze flower price scraper.
-Navigates to eaze.com with the target geolocation, intercepts catalog API
-responses (so bearer tokens / cookies are handled transparently by the
-browser), then paginates via scroll and page.evaluate API replay.
+Navigates to www.eaze.com, then fetches /api/v2/groups/flowers and
+/api/v2/groups/bulk-flower-5g-and-up via page.evaluate (same-origin,
+no CORS) to capture the full flower catalog.
 Merges into flower_results.csv with source='eaze'.
 
 Same --radius / --latlng / --label argparse interface and CSV merge pattern
@@ -24,21 +24,15 @@ from playwright.async_api import async_playwright
 # Config
 # ---------------------------------------------------------------------------
 
-LATLNG        = "33.58,-117.83"
-RADIUS        = "20mi"                # accepted for CLI parity; Eaze is zone-based
-CATALOG_WAIT  = 5                     # seconds after page load before scraping
-SCROLL_PASSES = 4                     # scroll passes to trigger lazy-load pages
-PAGE_TIMEOUT  = 45_000
+LATLNG       = "33.58,-117.83"
+RADIUS       = "20mi"                # accepted for CLI parity; Eaze is zone-based
+PAGE_TIMEOUT = 45_000
 
-EAZE_HOME      = "https://eaze.com"
-EAZE_SHOP_URLS = [                    # try these in order until one yields products
-    "https://eaze.com/delivery/weed/flower",
-    "https://eaze.com/delivery/flower",
-    "https://eaze.com/shop/flower",
-    "https://eaze.com/delivery",
-    "https://eaze.com/",
-]
-API_DOMAIN = "api.eaze.com"
+EAZE_HOME    = "https://www.eaze.com"
+EAZE_MENU    = "https://www.eaze.com/menu"
+
+# Groups that contain flower SKUs; fetched via /api/v2/groups/{slug}?menu=default
+FLOWER_GROUP_SLUGS = ["flowers", "bulk-flower-5g-and-up"]
 
 CSV_PATH   = "flower_results.csv"
 CSV_FIELDS = ["ppg", "price", "grams", "label", "dist", "product", "brand",
@@ -94,122 +88,44 @@ def _parse_grams(raw, label: str = "") -> float | None:
     return None
 
 
-def _is_flower(p: dict) -> bool:
-    for field in ("kind", "productType", "type", "category", "product_type"):
-        v = (p.get(field) or "").lower().strip()
-        if v in ("flower", "bud", "cannabis flower", "cannabis_flower"):
-            return True
-        if v in ("", ):
-            continue
-        if "flower" in v:
-            return True
-    return False
-
 
 # ---------------------------------------------------------------------------
 # Product row builder  — handles flat products and variant-arrays
 # ---------------------------------------------------------------------------
 
-def rows_from_product(p: dict, listing_url: str) -> list[dict]:
-    if not _is_flower(p):
-        return []
+def rows_from_product(p: dict, _listing_url: str = "") -> list[dict]:
+    # New flat-product shape: type.slug == 'flowers', no variants array.
+    # Flower identity comes from the group slug we fetched, so just block
+    # subtype slugs that aren't actual smokable flower.
     name = p.get("name", "")
     if not name or EXCLUDE_RE.search(name):
         return []
 
-    brand = (
-        p.get("brandName")
-        or (p.get("brand") or {}).get("name", "")
-        or p.get("brand_name", "")
-    )
-    dispensary = (
-        p.get("dispensaryName")
-        or p.get("dispensary_name")
-        or (p.get("dispensary") or {}).get("name", "")
-        or "Eaze"
-    )
-    top_on_sale = bool(
-        p.get("isDiscounted") or p.get("isOnSale") or p.get("is_discounted")
-        or p.get("on_sale") or p.get("isSpecial")
-    )
-    updated_at = p.get("updatedAt") or p.get("updated_at") or ""
-    dist = 0.0   # Eaze is delivery-only — no physical distance metric
+    brand      = (p.get("brand") or {}).get("name", "")
+    subtype    = (p.get("subtype") or {}).get("name", "")
+    on_sale    = "True" if p.get("tag") else "False"
+    slug       = p.get("slug", "")
+    listing_url = f"https://www.eaze.com/menu/{slug}" if slug else EAZE_MENU
 
-    # ── variant model ────────────────────────────────────────────────────────
-    variants = p.get("variants") or []
-    if variants:
-        out = []
-        for v in variants:
-            try:
-                price = float(v.get("price") or v.get("discountedPrice") or 0)
-                orig  = float(v.get("originalPrice") or v.get("retailPrice") or price)
-            except (TypeError, ValueError):
-                continue
-            if price <= 0:
-                continue
-            label_raw = str(v.get("label") or v.get("sizeLabel") or v.get("unit") or "")
-            grams = _parse_grams(
-                v.get("quantity") or v.get("grams") or v.get("size") or v.get("weight"),
-                label_raw,
-            )
-            if grams is None:
-                continue
-            on_sale = "True" if (top_on_sale or price < orig - 0.01) else "False"
-            out.append(dict(
-                ppg=round(price / grams, 4), price=price, grams=grams,
-                label=label_raw, dist=dist, product=name, brand=brand,
-                dispensary=dispensary, on_sale=on_sale,
-                updated_at=updated_at, source="eaze", listing_url=listing_url,
-            ))
-        return out
-
-    # ── flat single-size product ─────────────────────────────────────────────
     try:
-        price = float(p.get("price") or p.get("discountedPrice") or 0)
-        orig  = float(p.get("originalPrice") or p.get("retailPrice") or price)
+        price = float(p.get("price") or 0)
     except (TypeError, ValueError):
         return []
     if price <= 0:
         return []
 
-    label_raw = str(p.get("label") or p.get("unit") or p.get("sizeLabel") or "")
-    grams = _parse_grams(
-        p.get("quantity") or p.get("grams") or p.get("weight") or p.get("gramsUnit"),
-        label_raw or name,  # fall back to name for weight clues
-    )
+    # weight field is unreliable (sometimes unit count, sometimes grams).
+    # Parse from subtype name + product name which always contain the size text.
+    grams = _parse_grams(p.get("weight"), f"{subtype} {name}")
     if grams is None:
         return []
 
-    on_sale = "True" if (top_on_sale or price < orig - 0.01) else "False"
     return [dict(
         ppg=round(price / grams, 4), price=price, grams=grams,
-        label=label_raw, dist=dist, product=name, brand=brand,
-        dispensary=dispensary, on_sale=on_sale,
-        updated_at=updated_at, source="eaze", listing_url=listing_url,
+        label=subtype, dist=0.0, product=name, brand=brand,
+        dispensary="Eaze", on_sale=on_sale,
+        updated_at="", source="eaze", listing_url=listing_url,
     )]
-
-
-# ---------------------------------------------------------------------------
-# Response interception helper
-# ---------------------------------------------------------------------------
-
-def _extract_products(data) -> list[dict]:
-    """Pull a flat product list out of whatever JSON shape we received."""
-    if isinstance(data, list):
-        return data
-    if not isinstance(data, dict):
-        return []
-    # Common wrapping keys, deepest first
-    for key in ("products", "items", "results", "data"):
-        val = data.get(key)
-        if isinstance(val, list):
-            return val
-        if isinstance(val, dict):
-            for inner_key in ("products", "items", "results"):
-                inner = val.get(inner_key)
-                if isinstance(inner, list):
-                    return inner
-    return []
 
 
 def dedup_key(r: dict) -> tuple:
@@ -222,118 +138,61 @@ def dedup_key(r: dict) -> tuple:
 
 
 # ---------------------------------------------------------------------------
-# Playwright  — navigate → intercept → paginate
+# Playwright  — load home page → fetch both flower groups via same-origin API
 # ---------------------------------------------------------------------------
 
 async def fetch_eaze_catalog(context, lat: float, lng: float) -> list[dict]:
     """
-    Navigate Eaze's flower catalog with browser-managed auth; capture all
-    API responses from api.eaze.com; return parsed rows.
-    Returns [] with a warning on geo-restriction or unexpected page shape.
+    Navigate to www.eaze.com to establish a session, then fetch both flower
+    catalog groups via /api/v2/groups/{slug} using page.evaluate (same-origin,
+    no CORS). Returns parsed rows or [] with a warning on failure.
     """
     page = await context.new_page()
-    products_by_id: dict[str, dict] = {}
-    captured_listing_url = [EAZE_SHOP_URLS[0]]
-
-    async def on_response(response):
-        if API_DOMAIN not in response.url:
-            return
-        if response.status != 200:
-            return
-        try:
-            data = await response.json()
-        except Exception:
-            return
-        for p in _extract_products(data):
-            if not isinstance(p, dict):
-                continue
-            pid = str(p.get("id") or p.get("product_id") or p.get("objectID") or id(p))
-            products_by_id[pid] = p
-
-    page.on("response", on_response)
+    all_products: list[dict] = {}
 
     try:
-        # ── Establish CORS origin on the home page ───────────────────────────
         print("Loading Eaze...")
         await page.goto(EAZE_HOME, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT)
         await asyncio.sleep(2)
 
-        # ── Navigate to flower catalog ───────────────────────────────────────
-        for url in EAZE_SHOP_URLS:
+        for slug in FLOWER_GROUP_SLUGS:
             try:
-                resp = await page.goto(url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT)
-                if resp and resp.ok:
-                    captured_listing_url[0] = url
-                    break
-            except Exception:
-                continue
-        await asyncio.sleep(CATALOG_WAIT)
-
-        # ── Scroll to trigger lazy-load pagination ───────────────────────────
-        for _ in range(SCROLL_PASSES):
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(1.5)
-            # Click any "load more" / "see more" buttons if present
-            try:
-                btn = page.locator(
-                    'button:text-matches("load more|see more|view more|show more", "i")'
-                ).first
-                if await btn.is_visible(timeout=500):
-                    await btn.click()
-                    await asyncio.sleep(1.5)
-            except Exception:
-                pass
-
-        # ── Fallback: direct API call from within browser context ─────────────
-        # Only attempted if the navigation captured nothing — avoids duplicate work.
-        if not products_by_id:
-            for api_url in [
-                f"https://{API_DOMAIN}/api/v3/menu?lat={lat}&lng={lng}&rec=true&med=false",
-                f"https://{API_DOMAIN}/api/v3/products?lat={lat}&lng={lng}&type=flower&page=1&perPage=50",
-                f"https://{API_DOMAIN}/api/v2/products?lat={lat}&lng={lng}&kind=flower",
-            ]:
-                try:
-                    result = await page.evaluate(
-                        f"""async () => {{
-                            const r = await fetch({json.dumps(api_url)}, {{
-                                headers: {{
-                                    'Accept': 'application/json',
-                                    'Origin': 'https://eaze.com',
-                                    'Referer': 'https://eaze.com/',
-                                }},
-                                credentials: 'include',
-                            }});
-                            if (!r.ok) return {{__status: r.status}};
-                            return await r.json();
-                        }}"""
-                    )
-                    if isinstance(result, dict) and "__status" in result:
-                        continue
-                    for p in _extract_products(result):
-                        if isinstance(p, dict):
-                            pid = str(p.get("id") or p.get("product_id") or id(p))
-                            products_by_id[pid] = p
-                    if products_by_id:
-                        break
-                except Exception:
+                result = await page.evaluate(f"""async () => {{
+                    const r = await fetch('/api/v2/groups/{slug}?menu=default', {{
+                        credentials: 'include',
+                        headers: {{'Accept': 'application/json'}},
+                    }});
+                    if (!r.ok) return {{__status: r.status}};
+                    return await r.json();
+                }}""")
+                if isinstance(result, dict) and "__status" in result:
+                    print(f"  {slug}: HTTP {result['__status']}")
                     continue
+                prods = result.get("products") or []
+                print(f"  {slug}: {len(prods)} products")
+                for p in prods:
+                    if isinstance(p, dict):
+                        pid = str(p.get("id") or p.get("catalogItemId") or id(p))
+                        all_products[pid] = p
+            except Exception as exc:
+                print(f"  {slug}: error — {exc}")
 
     except Exception as exc:
         print(f"WARNING: Eaze — unexpected error during fetch: {exc}")
     finally:
         await page.close()
 
-    if not products_by_id:
+    if not all_products:
         print(
             "WARNING: Eaze — 0 products captured. "
-            "The delivery area may not be serviceable or the page structure has changed. "
+            "The delivery area may not be serviceable or the API shape has changed. "
             "Skipping Eaze for this cycle."
         )
         return []
 
     rows = []
-    for p in products_by_id.values():
-        rows.extend(rows_from_product(p, captured_listing_url[0]))
+    for p in all_products.values():
+        rows.extend(rows_from_product(p, EAZE_MENU))
     return rows
 
 
