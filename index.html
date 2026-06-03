@@ -244,6 +244,19 @@
     .flag-sale { background: #fff3cd; color: #856404; border-color: #ffc107; }
     .flag-bait { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
 
+    .src-badge {
+      display: inline-block;
+      font-size: .63rem;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+      letter-spacing: .2px;
+    }
+    .src-weedmaps { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .src-leafly   { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+
     .score-col { white-space: nowrap; }
 
     .empty {
@@ -303,6 +316,12 @@
   <div class="pill-group" id="weight-pills">
     <span class="pill-label">Size:</span>
   </div>
+  <div class="pill-group" id="source-filters">
+    <span class="pill-label">Source:</span>
+    <button id="src-all"      class="active" data-src="">All</button>
+    <button id="src-weedmaps" data-src="weedmaps">Weedmaps</button>
+    <button id="src-leafly"   data-src="leafly">Leafly</button>
+  </div>
   <div class="pill-group" id="flag-filters">
     <span class="pill-label">Hide:</span>
     <button id="hide-fake-sales" title="Hide items marked on sale but priced at or above the median $/g for that size">Fake sales</button>
@@ -342,6 +361,7 @@
   let hideFakeSales  = false;
   let hideBaitPrices = false;
   let scoringMode    = 'mainstream';  // 'mainstream' | 'craft'
+  let sourceFilter   = '';            // '' = all, 'weedmaps', 'leafly'
 
   // Human-friendly labels for standard cannabis retail sizes
   const WEIGHT_LABELS = {
@@ -375,7 +395,7 @@
       brands[b].products.add(r.product);
       brands[b].ppgs.push(+r.ppg);
       brands[b].total++;
-      if (r.on_sale === 'True') brands[b].sales++;
+      if (r.on_sale === 'True' || r.on_sale === true) brands[b].sales++;
     }
     const maxDisps = Math.max(...Object.values(brands).map(d => d.disps.size));
     const scores = {};
@@ -442,7 +462,7 @@
     for (const r of rows) {
       const med = medPpg[+r.grams] ?? +r.ppg;
       const flags = [];
-      if (r.on_sale === 'True' && +r.ppg >= med) flags.push('fake_sale');
+      if ((r.on_sale === 'True' || r.on_sale === true) && +r.ppg >= med) flags.push('fake_sale');
       if (+r.ppg < med * 0.5 && (ppgByWeight[+r.grams]?.length ?? 0) >= 3) flags.push('bait_price');
       r._flags   = flags;
       r._medPpg  = med;
@@ -488,6 +508,7 @@
       (!f.search || r.product?.toLowerCase().includes(f.search) || r.brand?.toLowerCase().includes(f.search)) &&
       (!f.disp   || r.dispensary === f.disp) &&
       (selectedWeights.size === 0 || selectedWeights.has(Number(r.grams))) &&
+      (!sourceFilter || (r.source || 'weedmaps') === sourceFilter) &&
       r.ppg   >= f.ppgMin && r.ppg   <= f.ppgMax &&
       r.price >= f.priceMin && r.price <= f.priceMax &&
       !(hideFakeSales  && r._flags?.includes('fake_sale')) &&
@@ -532,6 +553,9 @@
         f === 'bait_price' ? `<span class="flag-badge flag-bait"  title="$/g is more than 50% below the $${r._medPpg?.toFixed(2)}/g median — verify this item is in stock">⚠LOW</span>` : ''
       ).join('');
 
+      const src = r.source || 'weedmaps';
+      const srcBadge = `<span class="src-badge src-${src}" title="Source: ${src}">${src === 'weedmaps' ? 'WM' : 'LF'}</span>`;
+
       return `
       <tr>
         <td class="ppg">$${Number(r.ppg).toFixed(2)}</td>
@@ -539,8 +563,9 @@
         <td class="wt">${Number(r.grams).toFixed(1)}g</td>
         <td class="product" title="${r.updated_at ? 'Listing updated ' + fmtRelative(r.updated_at) : ''}">
           ${esc(r.product)}
-          ${r.on_sale === "True" ? '<span class="sale-badge">SALE</span>' : ""}
+          ${r.on_sale === "True" || r.on_sale === true ? '<span class="sale-badge">SALE</span>' : ""}
           ${flagBadges}
+          ${srcBadge}
         </td>
         <td class="brand">${esc(r.brand || "—")}</td>
         <td class="score-col">${scoreBadge}</td>
@@ -612,6 +637,16 @@
   // ── Wire up filter inputs ─────────────────────────────────────────────────
   ["search","dispensary","ppg-min","ppg-max","price-min","price-max"].forEach(id => {
     document.getElementById(id).addEventListener("input", render);
+  });
+
+  // ── Source filter ─────────────────────────────────────────────────────────
+  document.querySelectorAll('#source-filters button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sourceFilter = btn.dataset.src;
+      document.querySelectorAll('#source-filters button').forEach(b =>
+        b.classList.toggle('active', b.dataset.src === sourceFilter));
+      render();
+    });
   });
 
   // ── Flag filter toggles ───────────────────────────────────────────────────

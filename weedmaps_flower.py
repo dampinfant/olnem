@@ -175,7 +175,7 @@ def rows_from_item(item: dict, disp_name: str, dist: float) -> list[dict]:
 def _row(disp, dist, name, brand, label, price, grams, ppg, on_sale, updated_at=""):
     return dict(dispensary=disp, dist=dist, product=name, brand=brand,
                 label=label, price=price, grams=grams, ppg=ppg, on_sale=on_sale,
-                updated_at=updated_at)
+                updated_at=updated_at, source="weedmaps")
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ async def async_main():
         writer = csv.DictWriter(
             f,
             fieldnames=["ppg", "price", "grams", "label", "dist",
-                        "product", "brand", "dispensary", "on_sale", "updated_at"],
+                        "product", "brand", "dispensary", "on_sale", "updated_at", "source"],
             extrasaction="ignore",
         )
         writer.writeheader()

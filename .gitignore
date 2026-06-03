@@ -6,7 +6,11 @@ location.json
 
 # Temp dev/debug scripts
 inspect_api.py
+inspect_leafly.py
 screenshot_*.py
+
+# Scraper logs and intermediate data
+leafly_api_log.json
 
 # Screenshots
 *.png

@@ -20,11 +20,12 @@ import urllib.request
 import webbrowser
 from datetime import datetime, timezone
 
-BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
-SCRAPER        = os.path.join(BASE_DIR, "weedmaps_flower.py")
-CSV_PATH       = os.path.join(BASE_DIR, "flower_results.csv")
-LOCATION_FILE  = os.path.join(BASE_DIR, "location.json")
-PYTHON         = sys.executable
+BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
+SCRAPER_WM      = os.path.join(BASE_DIR, "weedmaps_flower.py")
+SCRAPER_LF      = os.path.join(BASE_DIR, "leafly_flower.py")
+CSV_PATH        = os.path.join(BASE_DIR, "flower_results.csv")
+LOCATION_FILE   = os.path.join(BASE_DIR, "location.json")
+PYTHON          = sys.executable
 
 _DEFAULT_LOCATION = {"latlng": "33.58,-117.83", "label": "Newport Coast, CA"}
 
@@ -67,6 +68,21 @@ _status = {
 }
 
 
+def _run_one(cmd: list, timeout: int = 900) -> str | None:
+    """Run a subprocess; return error string or None on success."""
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=BASE_DIR, timeout=timeout,
+        )
+        if result.returncode != 0:
+            return (result.stderr or result.stdout or "")[-600:].strip()
+        return None
+    except subprocess.TimeoutExpired:
+        return "Timed out after 15 minutes."
+    except Exception as exc:
+        return str(exc)
+
+
 def _run_scraper(radius: str, latlng: str, label: str):
     with _lock:
         _status["running"]        = True
@@ -74,25 +90,24 @@ def _run_scraper(radius: str, latlng: str, label: str):
         _status["radius"]         = radius
         _status["latlng"]         = latlng
         _status["location_label"] = label
-    try:
-        result = subprocess.run(
-            [PYTHON, SCRAPER, "--radius", radius, "--latlng", latlng, "--label", label],
-            capture_output=True, text=True,
-            cwd=BASE_DIR, timeout=900,
-        )
-        if result.returncode != 0:
-            tail = (result.stderr or result.stdout or "")[-600:]
-            with _lock:
-                _status["error"] = tail.strip()
-    except subprocess.TimeoutExpired:
-        with _lock:
-            _status["error"] = "Scraper timed out after 15 minutes."
-    except Exception as exc:
-        with _lock:
-            _status["error"] = str(exc)
-    finally:
-        with _lock:
-            _status["running"] = False
+
+    args = ["--radius", radius, "--latlng", latlng, "--label", label]
+    errors = []
+
+    # Weedmaps first (writes flower_results.csv)
+    err = _run_one([PYTHON, SCRAPER_WM] + args)
+    if err:
+        errors.append(f"Weedmaps: {err}")
+
+    # Leafly second (merges into flower_results.csv)
+    if os.path.exists(SCRAPER_LF):
+        err = _run_one([PYTHON, SCRAPER_LF] + args)
+        if err:
+            errors.append(f"Leafly: {err}")
+
+    with _lock:
+        _status["error"]   = "\n".join(errors) if errors else None
+        _status["running"] = False
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
