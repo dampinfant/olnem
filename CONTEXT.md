@@ -16,6 +16,7 @@ A local tool that scrapes flower (cannabis) prices from dispensaries near any lo
 | `iheartjane_flower.py` | Async Playwright scraper for iHeartJane — merges into `flower_results.csv` with `source=iheartjane` |
 | `flower_results.csv` | Generated output, gitignored, recreated on every scrape |
 | `location.json` | Persisted last-used lat/lng + label, gitignored |
+| `snapshots/` | Timestamped copies of `flower_results.csv` after each scrape cycle (e.g. `snapshots/2024-01-15_14-00.csv`), gitignored |
 
 ## How to run
 ```
@@ -190,6 +191,7 @@ Note: The Task Scheduler job only runs `weedmaps_flower.py`. The Leafly scraper 
 
 ## What's gitignored
 - `flower_results.csv` — generated data
+- `snapshots/` — timestamped CSV snapshots; grows large over time
 - `location.json` — user-specific saved location
 - `inspect_api.py`, `inspect_leafly.py`, `screenshot_*.py` — one-off dev/debug scripts
 - `leafly_api_log.json` — API discovery log
