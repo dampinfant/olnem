@@ -192,6 +192,130 @@ Note: The Task Scheduler job only runs `weedmaps_flower.py`. The Leafly scraper 
 - `*.png` — screenshots
 - All home-directory noise (AppData, Documents, etc.)
 
+## iHeartJane API (discovered, scraper not yet built)
+
+iHeartJane is architecturally different from Weedmaps/Leafly. Product data lives
+behind a per-store secret key (`jdm_api_key`) that is embedded in each dispensary's
+own website — it is NOT in iHeartJane's public API.
+
+### Store discovery (works, no browser required)
+Algolia REST API — call directly with `requests`, no Playwright needed:
+```
+POST https://search.iheartjane.com/1/indexes/stores-production/query
+Headers:
+  X-Algolia-API-Key: edc5435c65d771cecbd98bbd488aa8d3
+  X-Algolia-Application-Id: VFM4X0N23A
+  Content-Type: application/json
+Body:
+  { "aroundLatLng": "{lat},{lng}", "aroundRadius": {meters},
+    "hitsPerPage": 30, "page": 0 }
+```
+Response: `hits[].{ objectID, url_slug, name, _geoloc.{lat,lng}, pickup, product_count }`
+`objectID` is the numeric store ID used everywhere else.
+Pagination: increment `page` (0-indexed) until `hits` is empty.
+
+### Store details (REST, no auth, no browser)
+```
+GET https://api.iheartjane.com/v1/stores/{store_id}
+Response: { store: { id, name, lat, long, boost_menu_url, product_count,
+                     url_slug, city, state, pickup, delivery, ... } }
+```
+`boost_menu_url` is the dispensary's own website URL (e.g. `https://farmacyshop.com/santa-ana-cannabis`).
+This is the page that hosts the iHeartJane embed and where `jdm_api_key` can be captured.
+
+### Getting the jdm_api_key (requires Playwright, per-store)
+The `jdm_api_key` is a UUID embedded in each dispensary's website HTML/JS.
+It appears in all `dmerch.iheartjane.com` request URLs automatically.
+The only reliable way to capture it:
+1. Navigate a Playwright page to `store.boost_menu_url`
+2. Register `page.on('request', ...)` — watch for `dmerch.iheartjane.com` URLs
+3. Extract via regex: `re.search(r'jdm_api_key=([a-f0-9-]+)', req.url).group(1)`
+4. Key fires in the first dmerch call, within ~3s of `domcontentloaded`
+
+Farmacy Santa Ana (store_id=519) key: `ce5f15c9-3d09-441d-9bfd-26e87aff5925`
+(for testing only — real scraper must capture dynamically per store)
+
+### Product data endpoint (POST, `Content-Type: text/plain`)
+```
+POST https://dmerch.iheartjane.com/v2/smart
+     ?jdm_api_key={key}&jdm_source=monolith&jdm_version=2.17.0
+Headers:
+  Content-Type: text/plain      ← MUST be text/plain (CORS trick, avoids preflight)
+  Accept: application/json
+Body (JSON string sent as text/plain):
+{
+  "app_mode": "framelessEmbed",
+  "distinct_id": "$device:{uuid}",
+  "jane_device_id": "{uuid}",
+  "search_attributes": ["*"],
+  "store_id": {store_id},
+  "disable_ads": false,
+  "max_products": 60,            ← CRITICAL: 0 = count-only (products=[]), >0 = actual data
+  "num_columns": 5,
+  "page_size": 60,
+  "placement": "menu_inline_table",
+  "search_facets": [],
+  "search_filter": "kind:flower",  ← Algolia filter syntax; "" for all categories
+  "search_query": "",
+  "search_sort": "recommendation",
+  "page": 0                      ← 0-indexed pagination (add for page 1, 2, ...)
+}
+```
+Response: `{ nb_hits: N, placement: "...", products: [...] }`
+`nb_hits` = total matching products across all pages.
+`products` = array of product objects for this page.
+
+### CRITICAL GOTCHA: max_products must be > 0
+The initial call the page makes uses `max_products: 0` — this returns `nb_hits` but
+`products: []`. Without `max_products: 60` (or any positive value), you get no data.
+This is the exact place where discovery got stuck: the scraper was mimicking the
+page's default call, which intentionally omits products.
+
+### Product structure (not yet confirmed)
+Product fields are UNKNOWN — the non-empty product response was never successfully
+captured during discovery. Based on the Algolia facet schema, products likely have:
+- `name`: product name
+- `kind`: "flower", "edible", "cartridge", etc. (the filter field)
+- `brand`: brand name
+- `prices` or `price`: pricing object
+- `weight_unit_value` or similar: weight in grams
+- `applicable_special_ids`: deal/special IDs → on_sale indicator
+- `store_id`: numeric store ID
+- `id` or `product_id`: product identifier
+
+**The first thing to do when resuming**: make a successful POST with `max_products: 60`
+and `search_filter: "kind:flower"` from within a dispensary's page context, and
+print the first product's full JSON to establish the field mapping.
+
+### CORS constraint
+The `Content-Type: text/plain` trick means dmerch accepts requests from any Origin
+without CORS preflight. You can call it from within `farmacyshop.com` or any page —
+as long as you have the `jdm_api_key` in the URL, it works.
+
+### What doesn't work
+- `GET https://api.iheartjane.com/v1/products?store_id={id}` → always returns `{products: []}` regardless of params
+- `GET https://api.iheartjane.com/v1/stores/{id}/menu_items` → 404
+- `GET https://search.iheartjane.com/1/indexes/products-production/query` → exists but returns 0 hits (not the right index or wrong facet syntax)
+- Headless browsers on `iheartjane.com` → Cloudflare blocks them
+- `dmerch.iheartjane.com/v2/search` → 404
+
+### Scraper architecture (to implement)
+```
+Phase 1: Python requests (no Playwright) — find stores
+  - requests.post(Algolia endpoint) → store list with objectID, boost_menu_url
+  - requests.get(api.iheartjane.com/v1/stores/{id}) → confirm boost_menu_url
+  
+Phase 2: Playwright parallel (6 workers) — per store
+  - page.goto(store.boost_menu_url)
+  - on_request → capture jdm_api_key from first dmerch URL
+  - page.evaluate(fetch POST to dmerch/v2/smart, max_products=60, kind:flower)
+  - paginate: page=0, 1, 2, ... until products.length == 0
+  
+Phase 3: parse products → CSV rows, merge
+```
+
+---
+
 ## Adding a new scraper (pattern)
 To add `iheartjane_flower.py` or `dutchie_flower.py`:
 1. Use `inspect_*.py` Playwright script to find endpoints (same discovery pattern as `inspect_leafly.py`)
