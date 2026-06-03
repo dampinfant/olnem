@@ -1,0 +1,7 @@
+{
+  "_comment": "Add brand names here to give them a CRAFT badge in the UI regardless of their distribution score. Matching is case-insensitive. One brand per line.",
+  "brands": [
+    "Alien Labs",
+    "Bloom Farms"
+  ]
+}

@@ -258,6 +258,20 @@
     .src-leafly     { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
     .src-iheartjane { background: #fce4ec; color: #880e4f; border: 1px solid #f48fb1; }
 
+    .craft-badge {
+      display: inline-block;
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+      background: #ede9fe;
+      color: #5b21b6;
+      border: 1px solid #c4b5fd;
+      letter-spacing: .2px;
+    }
+
     .score-col { white-space: nowrap; }
 
     .listing-link {
@@ -376,6 +390,14 @@
   let hideBaitPrices = false;
   let scoringMode    = 'mainstream';  // 'mainstream' | 'craft'
   let sourceFilter   = '';            // '' = all, 'weedmaps', 'leafly'
+  let craftBrands    = new Set();     // lowercase brand names from craft_brands.json
+
+  fetch('craft_brands.json')
+    .then(r => r.json())
+    .then(json => {
+      craftBrands = new Set((json.brands || []).map(b => b.toLowerCase()));
+    })
+    .catch(() => {});  // missing file is fine — just no pinned craft brands
 
   // Human-friendly labels for standard cannabis retail sizes
   const WEIGHT_LABELS = {
@@ -594,7 +616,7 @@
           ${flagBadges}
           ${srcBadge}
         </td>
-        <td class="brand">${esc(r.brand || "—")}</td>
+        <td class="brand">${esc(r.brand || "—")}${r.brand && craftBrands.has(r.brand.toLowerCase()) ? '<span class="craft-badge" title="Pinned craft brand">CRAFT</span>' : ''}</td>
         <td class="score-col">${scoreBadge}</td>
         <td class="disp">${esc(r.dispensary)}${listingLink}</td>
         <td class="dist">${Number(r.dist).toFixed(1)} mi</td>
