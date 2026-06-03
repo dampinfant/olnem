@@ -624,7 +624,7 @@
       const name = ((e.brand || e.product) || '').toLowerCase();
       const disp = (e.dispensary || '').toLowerCase();
       if (f.search && !name.includes(f.search) && !disp.includes(f.search)) return false;
-      if (f.disp && e.dispensary !== f.disp) return false;
+      if (f.disp && String(e.dispensary ?? '').trim() !== f.disp) return false;
       if (selectedWeights.size > 0 && !selectedWeights.has(parseFloat(e.grams))) return false;
       if (sourceFilter && (e.source || 'weedmaps') !== sourceFilter) return false;
       if (e.last_price != null && f.priceMin > 0 && e.last_price < f.priceMin) return false;
@@ -882,7 +882,7 @@
     const f = getFilters();
     return rows.filter(r =>
       (!f.search || r.product?.toLowerCase().includes(f.search) || r.brand?.toLowerCase().includes(f.search)) &&
-      (!f.disp   || r.dispensary === f.disp) &&
+      (!f.disp   || String(r.dispensary ?? '').trim() === f.disp) &&
       (selectedWeights.size === 0 || selectedWeights.has(Number(r.grams))) &&
       (!sourceFilter || (r.source || 'weedmaps') === sourceFilter) &&
       r.ppg   >= f.ppgMin && r.ppg   <= f.ppgMax &&
@@ -1019,7 +1019,7 @@
     const sel  = document.getElementById("dispensary");
     const prev = sel.value;                        // preserve current selection across reloads
     while (sel.options.length > 1) sel.remove(1); // clear all but the "All dispensaries" option
-    const names = [...new Set(allRows.map(r => r.dispensary))].sort();
+    const names = [...new Set(allRows.map(r => String(r.dispensary ?? '').trim()))].filter(Boolean).sort();
     names.forEach(n => {
       const opt = document.createElement("option");
       opt.value = opt.textContent = n;
@@ -1052,9 +1052,11 @@
   });
 
   // ── Wire up filter inputs ─────────────────────────────────────────────────
-  ["search","dispensary","ppg-min","ppg-max","price-min","price-max"].forEach(id => {
+  ["search","ppg-min","ppg-max","price-min","price-max"].forEach(id => {
     document.getElementById(id).addEventListener("input", render);
   });
+  // <select> fires "change" reliably; "input" is spec-correct but inconsistent across browsers
+  document.getElementById("dispensary").addEventListener("change", render);
 
   // ── Source filter ─────────────────────────────────────────────────────────
   document.querySelectorAll('#source-filters button').forEach(btn => {

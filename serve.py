@@ -126,11 +126,11 @@ def _run_scraper(radius: str, latlng: str, label: str):
         if err:
             errors.append(f"Eaze: {err}")
 
-    # Grassdoor fifth (merges into flower_results.csv)
-    if os.path.exists(SCRAPER_GD):
-        err = _run_one([PYTHON, SCRAPER_GD] + args)
-        if err:
-            errors.append(f"Grassdoor: {err}")
+    # Grassdoor — domain offline as of 2024; uncomment when site is back
+    # if os.path.exists(SCRAPER_GD):
+    #     err = _run_one([PYTHON, SCRAPER_GD] + args)
+    #     if err:
+    #         errors.append(f"Grassdoor: {err}")
 
     if os.path.exists(CSV_PATH):
         os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
