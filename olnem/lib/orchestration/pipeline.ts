@@ -163,6 +163,35 @@ export async function runConversationLoop(
         });
       });
 
+      stream.on("contentBlock", (block) => {
+        if (block.type === "server_tool_use" && block.name === "web_search") {
+          const input = block.input as { query?: string };
+          onEvent({
+            type: "reasoning_chunk",
+            componentId: currentComponentId,
+            text: `\n[web search: "${input.query ?? ""}"]\n`,
+            sourceAgent: "main_agent",
+          });
+        } else if (block.type === "web_search_tool_result") {
+          const content = block.content;
+          let text: string;
+          if (!Array.isArray(content)) {
+            text = `\n[search error: ${content.error_code}]\n`;
+          } else if (content.length === 0) {
+            text = `\n[search returned no results]\n`;
+          } else {
+            const items = content.map((r) => `  • ${r.title} — ${r.url}`).join("\n");
+            text = `\n[${content.length} result${content.length === 1 ? "" : "s"}]\n${items}\n`;
+          }
+          onEvent({
+            type: "reasoning_chunk",
+            componentId: currentComponentId,
+            text,
+            sourceAgent: "main_agent",
+          });
+        }
+      });
+
       let response;
       try {
         response = await stream.finalMessage();
@@ -252,6 +281,12 @@ export async function runConversationLoop(
         }
 
         messages.push({ role: "user", content: toolResults });
+        continue;
+      }
+
+      if (response.stop_reason === "pause_turn") {
+        // Server-side tool loop hit the iteration ceiling; the API will resume
+        // automatically when we re-send the conversation as-is (no user turn needed).
         continue;
       }
 

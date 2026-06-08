@@ -13,7 +13,7 @@
 // The orchestration layer MUST reject any classification event that has
 // structured fields without reasoning text, or reasoning text without fields.
 
-import type { Tool } from "@anthropic-ai/sdk/resources/messages";
+import type { Tool, WebSearchTool20260209 } from "@anthropic-ai/sdk/resources/messages";
 import type {
   ComponentClassification,
   ResolutionGround,
@@ -276,6 +276,11 @@ export const REQUEST_USER_INPUT_TOOL: Tool = {
   },
 };
 
+export const WEB_SEARCH_TOOL: WebSearchTool20260209 = {
+  type: "web_search_20260209",
+  name: "web_search",
+};
+
 // ─── Agent tool allowlists ────────────────────────────────────────────────────
 //
 // Allowlist-not-denylist: each agent receives ONLY the tools listed here.
@@ -283,7 +288,7 @@ export const REQUEST_USER_INPUT_TOOL: Tool = {
 // added to that agent's allowlist. The list must be modified deliberately —
 // never derived from a registry, a spread of all tools, or a denylist.
 
-export const MAIN_AGENT_TOOL_ALLOWLIST: Tool[] = [CLASSIFY_COMPONENT_TOOL, REQUEST_USER_INPUT_TOOL];
+export const MAIN_AGENT_TOOL_ALLOWLIST: Array<Tool | WebSearchTool20260209> = [CLASSIFY_COMPONENT_TOOL, REQUEST_USER_INPUT_TOOL, WEB_SEARCH_TOOL];
 
 export const VERIFICATION_AGENT_TOOL_ALLOWLIST: Tool[] = [VERIFICATION_RETURN_TOOL];
 
